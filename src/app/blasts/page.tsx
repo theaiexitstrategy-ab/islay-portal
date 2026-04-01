@@ -2,25 +2,11 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import PortalLayout from "@/components/PortalLayout";
+import type { Blast, Lead, Artist } from "@/types/database";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
-
-interface BlastRecord {
-  id: string;
-  fields: Record<string, unknown>;
-}
-
-interface LeadRecord {
-  id: string;
-  fields: Record<string, unknown>;
-}
-
-interface ArtistRecord {
-  id: string;
-  fields: Record<string, unknown>;
-}
 
 type Segment = "all" | "first_timers" | "returning" | "no_shows" | "by_artist";
 
@@ -28,8 +14,8 @@ type Segment = "all" | "first_timers" | "returning" | "no_shows" | "by_artist";
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function formatDate(dateStr: unknown): string {
-  if (!dateStr || typeof dateStr !== "string") return "\u2014";
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "\u2014";
   try {
     return new Date(dateStr).toLocaleDateString("en-US", {
       month: "short",
@@ -93,9 +79,9 @@ function SkeletonForm() {
 /* ------------------------------------------------------------------ */
 
 export default function BlastsPage() {
-  const [blasts, setBlasts] = useState<BlastRecord[]>([]);
-  const [leads, setLeads] = useState<LeadRecord[]>([]);
-  const [artists, setArtists] = useState<ArtistRecord[]>([]);
+  const [blasts, setBlasts] = useState<Blast[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [artists, setArtists] = useState<Artist[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Form state
@@ -139,39 +125,27 @@ export default function BlastsPage() {
   const artistNames = useMemo(() => {
     const names: string[] = [];
     for (const a of artists) {
-      const name = a.fields["Name"] as string;
-      if (name) names.push(name);
+      if (a.name) names.push(a.name);
     }
     return names.sort();
   }, [artists]);
 
   /* Calculate recipient count */
   const recipientCount = useMemo(() => {
-    const withPhone = leads.filter((l) => !!(l.fields["Phone"] as string));
+    const withPhone = leads.filter((l) => !!l.phone);
 
     switch (segment) {
       case "all":
         return withPhone.length;
       case "first_timers":
-        return withPhone.filter(
-          (l) => !(l.fields["Booking Confirmed"] as boolean),
-        ).length;
+        return withPhone.filter((l) => !l.booking_confirmed).length;
       case "returning":
-        return withPhone.filter(
-          (l) => !!(l.fields["Booking Confirmed"] as boolean),
-        ).length;
+        return withPhone.filter((l) => l.booking_confirmed).length;
       case "no_shows":
-        return withPhone.filter(
-          (l) => (l.fields["Status"] as string) === "No Show",
-        ).length;
+        return withPhone.filter((l) => l.lead_status === "No Show").length;
       case "by_artist": {
         if (!artistFilter) return 0;
-        return withPhone.filter((l) => {
-          const raw = l.fields["Artist Name"] ?? l.fields["Artist"];
-          if (typeof raw === "string") return raw === artistFilter;
-          if (Array.isArray(raw)) return raw.includes(artistFilter);
-          return false;
-        }).length;
+        return withPhone.filter((l) => l.artist_selected === artistFilter).length;
       }
       default:
         return 0;
@@ -273,8 +247,7 @@ export default function BlastsPage() {
                 </thead>
                 <tbody>
                   {blasts.map((blast) => {
-                    const f = blast.fields;
-                    const status = (f["Status"] as string) || "Pending";
+                    const status = blast.status || "Pending";
                     const badgeClass =
                       statusColors[status] || "bg-border text-text-muted";
 
@@ -284,16 +257,16 @@ export default function BlastsPage() {
                         className="border-b border-border last:border-0 hover:bg-white/[0.03] transition-colors"
                       >
                         <td className="px-4 py-3 text-sm text-text whitespace-nowrap">
-                          {(f["Blast Name"] as string) || "\u2014"}
+                          {blast.blast_name || "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {formatDate(f["Date Sent"])}
+                          {formatDate(blast.sent_at)}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {(f["Recipients"] as number) ?? "\u2014"}
+                          {blast.total_recipients ?? "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {(f["Delivered"] as number) ?? "\u2014"}
+                          {blast.delivered_count ?? "\u2014"}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span

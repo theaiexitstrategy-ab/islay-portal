@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect } from "react";
 import PortalLayout from "@/components/PortalLayout";
 
 export default function SettingsPage() {
-  const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
@@ -14,9 +13,13 @@ export default function SettingsPage() {
   } | null>(null);
 
   const handleChangePassword = useCallback(async () => {
-    if (!oldPassword || !newPassword || !confirmPassword) return;
+    if (!newPassword || !confirmPassword) return;
     if (newPassword !== confirmPassword) {
       setToast({ type: "error", message: "New passwords do not match." });
+      return;
+    }
+    if (newPassword.length < 6) {
+      setToast({ type: "error", message: "Password must be at least 6 characters." });
       return;
     }
     setSaving(true);
@@ -25,14 +28,13 @@ export default function SettingsPage() {
       const res = await fetch("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ oldPassword, newPassword }),
+        body: JSON.stringify({ newPassword }),
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Failed to change password");
       }
       setToast({ type: "success", message: data.message });
-      setOldPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (err) {
@@ -44,7 +46,7 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  }, [oldPassword, newPassword, confirmPassword]);
+  }, [newPassword, confirmPassword]);
 
   /* Auto-dismiss toast */
   useEffect(() => {
@@ -117,18 +119,6 @@ export default function SettingsPage() {
           <div className="space-y-4 max-w-md">
             <label className="block">
               <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
-                Old Password
-              </span>
-              <input
-                type="password"
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                className="mt-1 block w-full rounded-lg bg-bg border border-border text-text px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
                 New Password
               </span>
               <input
@@ -153,7 +143,7 @@ export default function SettingsPage() {
 
             <button
               onClick={handleChangePassword}
-              disabled={saving || !oldPassword || !newPassword || !confirmPassword}
+              disabled={saving || !newPassword || !confirmPassword}
               className="px-6 py-2.5 rounded-lg bg-gold text-black font-semibold text-sm hover:bg-gold/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? "Saving\u2026" : "Save"}

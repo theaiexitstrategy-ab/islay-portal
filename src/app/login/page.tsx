@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,13 +18,14 @@ export default function LoginPage() {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ email, password }),
     });
 
     if (res.ok) {
       router.push("/");
     } else {
-      setError("Invalid password");
+      const data = await res.json();
+      setError(data.error || "Invalid credentials");
     }
     setLoading(false);
   }
@@ -38,6 +40,21 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
+            <label htmlFor="email" className="block text-sm text-text-muted mb-1">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full"
+              placeholder="nathan@islaystudios.com"
+              autoFocus
+            />
+          </div>
+
+          <div>
             <label htmlFor="password" className="block text-sm text-text-muted mb-1">
               Password
             </label>
@@ -47,8 +64,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full"
-              placeholder="Enter portal password"
-              autoFocus
+              placeholder="Enter your password"
             />
           </div>
 

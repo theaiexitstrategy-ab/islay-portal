@@ -2,35 +2,7 @@
 
 import { useEffect, useState } from "react";
 import PortalLayout from "@/components/PortalLayout";
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
-
-interface ArtistRecord {
-  id: string;
-  fields: Record<string, unknown>;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-function str(val: unknown): string {
-  if (!val) return "\u2014";
-  if (typeof val === "string") return val;
-  if (typeof val === "number") return String(val);
-  return "\u2014";
-}
-
-function num(val: unknown): number {
-  if (typeof val === "number") return val;
-  if (typeof val === "string") {
-    const n = Number(val);
-    return isNaN(n) ? 0 : n;
-  }
-  return 0;
-}
+import type { Artist } from "@/types/database";
 
 /* ------------------------------------------------------------------ */
 /*  Skeleton loader                                                    */
@@ -62,64 +34,56 @@ function SkeletonCards({ count = 6 }: { count?: number }) {
 /*  Artist card                                                        */
 /* ------------------------------------------------------------------ */
 
-function ArtistCard({ artist }: { artist: ArtistRecord }) {
-  const f = artist.fields;
-
-  const name = str(f["Name"]);
-  const role = str(f["Role"]);
-  const bookingPlatform = str(f["Booking Platform"]);
-  const bookingLink = f["Booking Link"] as string | undefined;
-  const active = !!(f["Active"] as boolean);
-
-  const totalLeads = num(f["Total Leads Assigned"]);
-  const totalBookings = num(f["Total Bookings Confirmed"]);
+function ArtistCard({ artist }: { artist: Artist }) {
   const conversionRate =
-    totalLeads > 0 ? ((totalBookings / totalLeads) * 100).toFixed(1) : "0.0";
+    artist.total_leads > 0
+      ? ((artist.total_bookings / artist.total_leads) * 100).toFixed(1)
+      : "0.0";
 
   return (
     <div className="bg-card rounded-xl border border-border p-6 flex flex-col gap-4">
       {/* Name + active indicator */}
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-lg font-bold text-text">{name}</h3>
-          <p className="text-sm text-text-muted mt-0.5">{role}</p>
+          <h3 className="text-lg font-bold text-text">{artist.name || "\u2014"}</h3>
+          <p className="text-sm text-text-muted mt-0.5">{artist.role || "\u2014"}</p>
         </div>
         <div className="flex items-center gap-2 mt-1">
           <span
             className={`inline-block w-2.5 h-2.5 rounded-full ${
-              active ? "bg-green-500" : "bg-gray-500"
+              artist.active ? "bg-green-500" : "bg-gray-500"
             }`}
           />
           <span className="text-xs text-text-muted">
-            {active ? "Active" : "Inactive"}
+            {artist.active ? "Active" : "Inactive"}
           </span>
         </div>
       </div>
 
       {/* Booking platform */}
       <div>
-        {bookingLink ? (
+        {artist.booking_url ? (
           <a
-            href={bookingLink}
+            href={artist.booking_url}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-gold hover:text-gold/80 underline underline-offset-2 transition-colors"
           >
-            {bookingPlatform !== "\u2014" ? bookingPlatform : "Booking Link"}
+            {artist.booking_platform || "Booking Link"}
           </a>
-        ) : bookingPlatform !== "\u2014" ? (
-          <p className="text-sm text-text-muted">{bookingPlatform}</p>
+        ) : artist.booking_platform ? (
+          <p className="text-sm text-text-muted">{artist.booking_platform}</p>
         ) : null}
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mt-auto pt-4 border-t border-border">
         <div className="text-center">
-          <p className="text-lg font-bold text-text">{totalLeads}</p>
+          <p className="text-lg font-bold text-text">{artist.total_leads}</p>
           <p className="text-xs text-text-muted">Leads</p>
         </div>
         <div className="text-center">
-          <p className="text-lg font-bold text-text">{totalBookings}</p>
+          <p className="text-lg font-bold text-text">{artist.total_bookings}</p>
           <p className="text-xs text-text-muted">Bookings</p>
         </div>
         <div className="text-center">
@@ -136,7 +100,7 @@ function ArtistCard({ artist }: { artist: ArtistRecord }) {
 /* ------------------------------------------------------------------ */
 
 export default function ArtistsPage() {
-  const [artists, setArtists] = useState<ArtistRecord[]>([]);
+  const [artists, setArtists] = useState<Artist[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

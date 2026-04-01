@@ -1,20 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// Edge-compatible HMAC-SHA256 using Web Crypto API
-async function hmacSha256(secret: string, message: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+import { createClient } from "@supabase/supabase-js";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -29,23 +14,48 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check session cookies exist
-  const token = req.cookies.get("session_token")?.value;
-  const storedHash = req.cookies.get("session_hash")?.value;
+  // Check for session cookies
+  const accessToken = req.cookies.get("sb-access-token")?.value;
+  const refreshToken = req.cookies.get("sb-refresh-token")?.value;
 
-  if (!token || !storedHash) {
+  if (!accessToken || !refreshToken) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // Verify token hash using Edge-compatible Web Crypto
-  const secret = process.env.NEXTAUTH_SECRET || "fallback-secret";
-  const expectedHash = await hmacSha256(secret, token);
+  // Verify the token with Supabase
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
 
-  if (expectedHash !== storedHash) {
-    return NextResponse.redirect(new URL("/login", req.url));
+  const { data, error } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+
+  if (error || !data.session) {
+    // Session invalid — redirect to login
+    const response = NextResponse.redirect(new URL("/login", req.url));
+    response.cookies.delete("sb-access-token");
+    response.cookies.delete("sb-refresh-token");
+    return response;
   }
 
-  return NextResponse.next();
+  // If tokens were refreshed, update the cookies
+  const res = NextResponse.next();
+  if (data.session.access_token !== accessToken) {
+    const opts = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax" as const,
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    };
+    res.cookies.set("sb-access-token", data.session.access_token, opts);
+    res.cookies.set("sb-refresh-token", data.session.refresh_token, opts);
+  }
+
+  return res;
 }
 
 export const config = {

@@ -1,36 +1,30 @@
 import { NextResponse } from "next/server";
-import { listRecords } from "@/lib/airtable";
-
-const TABLE_ID = process.env.AIRTABLE_LEADS_TABLE_ID!;
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
   try {
-    const leads = await listRecords(TABLE_ID);
+    const supabase = getSupabaseAdmin();
+
+    const { data: leads, error } = await supabase
+      .from("leads")
+      .select("date_entered, promo_claimed, booking_confirmed");
+
+    if (error) throw error;
 
     const now = new Date();
     const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    const totalLeads = leads.length;
-
+    const totalLeads = leads?.length ?? 0;
     let newThisWeek = 0;
     let promoClaims = 0;
     let bookingsConfirmed = 0;
 
-    for (const lead of leads) {
-      const fields = lead.fields as Record<string, unknown>;
-
-      const dateEntered = fields["Date Entered Funnel"] as string | undefined;
-      if (dateEntered && new Date(dateEntered) >= oneWeekAgo) {
+    for (const lead of leads || []) {
+      if (lead.date_entered && new Date(lead.date_entered) >= oneWeekAgo) {
         newThisWeek++;
       }
-
-      if (fields["Promo Claimed"]) {
-        promoClaims++;
-      }
-
-      if (fields["Booking Confirmed"]) {
-        bookingsConfirmed++;
-      }
+      if (lead.promo_claimed) promoClaims++;
+      if (lead.booking_confirmed) bookingsConfirmed++;
     }
 
     return NextResponse.json({

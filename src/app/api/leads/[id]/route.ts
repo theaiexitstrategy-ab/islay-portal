@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateRecord } from "@/lib/airtable";
-
-const TABLE_ID = process.env.AIRTABLE_LEADS_TABLE_ID!;
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 export async function PATCH(
   request: NextRequest,
@@ -10,8 +8,17 @@ export async function PATCH(
   try {
     const { id } = await params;
     const { fields } = await request.json();
-    const record = await updateRecord(TABLE_ID, id, fields);
-    return NextResponse.json(record);
+    const supabase = getSupabaseAdmin();
+
+    const { data, error } = await supabase
+      .from("leads")
+      .update(fields)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return NextResponse.json(data);
   } catch (error) {
     console.error("Failed to update lead:", error);
     return NextResponse.json(

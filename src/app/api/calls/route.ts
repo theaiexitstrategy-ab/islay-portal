@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import { listRecords } from "@/lib/airtable";
-
-const TABLE_ID = process.env.AIRTABLE_CALLS_TABLE_ID!;
+import { getSupabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
   try {
-    const records = await listRecords(TABLE_ID, {
-      sort: [{ field: "Date", direction: "desc" }],
-    });
-    return NextResponse.json(records);
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("calls")
+      .select("*")
+      .order("call_datetime", { ascending: false });
+
+    if (error) throw error;
+    return NextResponse.json(data);
   } catch (error) {
     console.error("Failed to fetch calls:", error);
     return NextResponse.json(

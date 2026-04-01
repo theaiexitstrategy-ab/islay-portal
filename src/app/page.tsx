@@ -1,23 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import PortalLayout from "@/components/PortalLayout";
+import type { Lead, Artist } from "@/types/database";
 
 interface DashboardStats {
   totalLeads: number;
   newThisWeek: number;
   promoClaims: number;
   bookingsConfirmed: number;
-}
-
-interface LeadRecord {
-  id: string;
-  fields: Record<string, unknown>;
-}
-
-interface ArtistRecord {
-  id: string;
-  fields: Record<string, unknown>;
 }
 
 interface ArtistPerformance {
@@ -88,7 +80,7 @@ function SkeletonTable({ rows = 5 }: { rows?: number }) {
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [leads, setLeads] = useState<LeadRecord[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [artistPerformance, setArtistPerformance] = useState<ArtistPerformance[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -97,7 +89,7 @@ export default function DashboardPage() {
       try {
         const [dashRes, leadsRes, artistsRes] = await Promise.all([
           fetch("/api/dashboard"),
-          fetch("/api/leads?maxRecords=10"),
+          fetch("/api/leads"),
           fetch("/api/artists"),
         ]);
 
@@ -111,52 +103,22 @@ export default function DashboardPage() {
 
         setStats(dashData);
 
-        const leadsArray: LeadRecord[] = Array.isArray(leadsData)
-          ? leadsData
-          : [];
-        setLeads(leadsArray);
+        const leadsArray: Lead[] = Array.isArray(leadsData) ? leadsData : [];
+        // Only show the 10 most recent on the dashboard
+        setLeads(leadsArray.slice(0, 10));
 
-        const artistsArray: ArtistRecord[] = Array.isArray(artistsData)
+        const artistsArray: Artist[] = Array.isArray(artistsData)
           ? artistsData
           : [];
 
-        // Build artist performance from leads and artists data
-        const artistMap = new Map<
-          string,
-          { name: string; leads: number; bookings: number }
-        >();
-
-        for (const artist of artistsArray) {
-          const name = (artist.fields["Name"] as string) || "Unknown";
-          artistMap.set(artist.id, { name, leads: 0, bookings: 0 });
-        }
-
-        // Count leads and bookings per artist from full leads data
-        // We use the leads that came back (up to 10 for display),
-        // but for accurate artist stats we rely on what we have
-        for (const lead of leadsArray) {
-          const artistIds = lead.fields["Artist Selected"] as string[] | undefined;
-          const booked = lead.fields["Booking Confirmed"] as boolean | undefined;
-          if (artistIds && Array.isArray(artistIds)) {
-            for (const aid of artistIds) {
-              const entry = artistMap.get(aid);
-              if (entry) {
-                entry.leads++;
-                if (booked) entry.bookings++;
-              }
-            }
-          }
-        }
-
-        const performance: ArtistPerformance[] = Array.from(
-          artistMap.values()
-        ).map((a) => ({
-          name: a.name,
-          totalLeads: a.leads,
-          totalBookings: a.bookings,
+        // Build artist performance
+        const performance: ArtistPerformance[] = artistsArray.map((a) => ({
+          name: a.name || "Unknown",
+          totalLeads: a.total_leads,
+          totalBookings: a.total_bookings,
           conversionRate:
-            a.leads > 0
-              ? ((a.bookings / a.leads) * 100).toFixed(1) + "%"
+            a.total_leads > 0
+              ? ((a.total_bookings / a.total_leads) * 100).toFixed(1) + "%"
               : "0.0%",
         }));
 
@@ -171,8 +133,38 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
-  function formatDate(dateStr: unknown): string {
-    if (!dateStr || typeof dateStr !== "string") return "—";
+  /* ---------------------------------------------------------------- */
+  /*  Real-time subscription for new leads                             */
+  /* ---------------------------------------------------------------- */
+  useEffect(() => {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    );
+
+    const channel = supabase
+      .channel("leads-realtime")
+      .on<Lead>(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "leads" },
+        (payload) => {
+          // Prepend the new lead to the list (keep max 10)
+          setLeads((prev) => [payload.new, ...prev].slice(0, 10));
+          // Increment total leads stat
+          setStats((prev) =>
+            prev ? { ...prev, totalLeads: prev.totalLeads + 1 } : prev,
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  function formatDate(dateStr: string | null): string {
+    if (!dateStr) return "\u2014";
     try {
       return new Date(dateStr).toLocaleDateString("en-US", {
         month: "short",
@@ -180,7 +172,7 @@ export default function DashboardPage() {
         year: "numeric",
       });
     } catch {
-      return "—";
+      return "\u2014";
     }
   }
 
@@ -328,8 +320,7 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {leads.map((lead) => {
-                    const f = lead.fields;
-                    const status = (f["Lead Status"] as string) || "New";
+                    const status = lead.lead_status || "New";
                     const badgeClass =
                       statusColors[status] || "bg-border text-text-muted";
                     return (
@@ -338,19 +329,19 @@ export default function DashboardPage() {
                         className="border-b border-border last:border-0 hover:bg-white/[0.02] transition-colors"
                       >
                         <td className="px-4 py-3 text-sm text-text whitespace-nowrap">
-                          {(f["Full Name"] as string) || "—"}
+                          {lead.full_name || "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {(f["Phone Number"] as string) || "—"}
+                          {lead.phone || "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {(f["Artist Selected"] as string) || "—"}
+                          {lead.artist_selected || "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {(f["Lead Source"] as string) || "—"}
+                          {lead.lead_source || "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {formatDate(f["Date Entered Funnel"])}
+                          {formatDate(lead.date_entered)}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span

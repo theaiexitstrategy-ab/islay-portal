@@ -2,22 +2,14 @@
 
 import { useEffect, useState } from "react";
 import PortalLayout from "@/components/PortalLayout";
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
-
-interface CallRecord {
-  id: string;
-  fields: Record<string, unknown>;
-}
+import type { Call } from "@/types/database";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function formatDate(dateStr: unknown): string {
-  if (!dateStr || typeof dateStr !== "string") return "\u2014";
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "\u2014";
   try {
     return new Date(dateStr).toLocaleDateString("en-US", {
       month: "short",
@@ -31,24 +23,15 @@ function formatDate(dateStr: unknown): string {
   }
 }
 
-function truncate(text: unknown, max = 60): string {
-  if (!text || typeof text !== "string") return "\u2014";
+function truncate(text: string | null, max = 60): string {
+  if (!text) return "\u2014";
   return text.length > max ? text.slice(0, max) + "\u2026" : text;
 }
 
-function str(val: unknown): string {
-  if (!val) return "\u2014";
-  if (typeof val === "string") return val;
-  if (typeof val === "number") return String(val);
-  return "\u2014";
-}
-
-function formatDuration(val: unknown): string {
-  if (val === null || val === undefined) return "\u2014";
-  const n = typeof val === "number" ? val : Number(val);
-  if (isNaN(n)) return str(val);
-  const mins = Math.floor(n / 60);
-  const secs = n % 60;
+function formatDuration(seconds: number | null): string {
+  if (seconds === null || seconds === undefined) return "\u2014";
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
   if (mins > 0) return `${mins}m ${secs}s`;
   return `${secs}s`;
 }
@@ -84,13 +67,9 @@ function CallModal({
   call,
   onClose,
 }: {
-  call: CallRecord;
+  call: Call;
   onClose: () => void;
 }) {
-  const f = call.fields;
-  const summary = str(f["Transcript Summary"]);
-  const transcriptUrl = f["Transcript URL"] as string | undefined;
-
   // Close on Escape
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -145,7 +124,7 @@ function CallModal({
                   Date
                 </p>
                 <p className="text-sm text-text mt-0.5">
-                  {formatDate(f["Date"])}
+                  {formatDate(call.call_datetime)}
                 </p>
               </div>
               <div>
@@ -153,7 +132,7 @@ function CallModal({
                   Caller Phone
                 </p>
                 <p className="text-sm text-text mt-0.5">
-                  {str(f["Caller Phone"])}
+                  {call.caller_phone || "\u2014"}
                 </p>
               </div>
               <div>
@@ -161,7 +140,7 @@ function CallModal({
                   Direction
                 </p>
                 <p className="text-sm text-text mt-0.5">
-                  {str(f["Direction"])}
+                  {call.call_direction || "\u2014"}
                 </p>
               </div>
               <div>
@@ -169,7 +148,7 @@ function CallModal({
                   Duration
                 </p>
                 <p className="text-sm text-text mt-0.5">
-                  {formatDuration(f["Duration"])}
+                  {formatDuration(call.duration_seconds)}
                 </p>
               </div>
               <div>
@@ -177,7 +156,7 @@ function CallModal({
                   Outcome
                 </p>
                 <p className="text-sm text-text mt-0.5">
-                  {str(f["Outcome"])}
+                  {call.call_outcome || "\u2014"}
                 </p>
               </div>
               <div>
@@ -185,7 +164,7 @@ function CallModal({
                   Artist Mentioned
                 </p>
                 <p className="text-sm text-text mt-0.5">
-                  {str(f["Artist Mentioned"])}
+                  {call.artist_mentioned || "\u2014"}
                 </p>
               </div>
             </div>
@@ -197,13 +176,13 @@ function CallModal({
                 Transcript Summary
               </p>
               <p className="text-sm text-text leading-relaxed whitespace-pre-wrap">
-                {summary}
+                {call.transcript_summary || "\u2014"}
               </p>
             </div>
 
-            {transcriptUrl && (
+            {call.transcript_url && (
               <a
-                href={transcriptUrl}
+                href={call.transcript_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-block text-sm text-gold hover:text-gold/80 underline underline-offset-2 transition-colors"
@@ -233,9 +212,9 @@ function CallModal({
 /* ------------------------------------------------------------------ */
 
 export default function CallsPage() {
-  const [calls, setCalls] = useState<CallRecord[]>([]);
+  const [calls, setCalls] = useState<Call[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
+  const [selectedCall, setSelectedCall] = useState<Call | null>(null);
 
   useEffect(() => {
     async function fetchCalls() {
@@ -294,38 +273,35 @@ export default function CallsPage() {
                 </tr>
               </thead>
               <tbody>
-                {calls.map((call) => {
-                  const f = call.fields;
-                  return (
-                    <tr
-                      key={call.id}
-                      onClick={() => setSelectedCall(call)}
-                      className="border-b border-border last:border-0 hover:bg-white/[0.03] transition-colors cursor-pointer"
-                    >
-                      <td className="px-4 py-3 text-sm text-text whitespace-nowrap">
-                        {formatDate(f["Date"])}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {str(f["Caller Phone"])}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {str(f["Direction"])}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {formatDuration(f["Duration"])}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {str(f["Outcome"])}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {str(f["Artist Mentioned"])}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-text-muted max-w-[300px] truncate">
-                        {truncate(f["Transcript Summary"], 60)}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {calls.map((call) => (
+                  <tr
+                    key={call.id}
+                    onClick={() => setSelectedCall(call)}
+                    className="border-b border-border last:border-0 hover:bg-white/[0.03] transition-colors cursor-pointer"
+                  >
+                    <td className="px-4 py-3 text-sm text-text whitespace-nowrap">
+                      {formatDate(call.call_datetime)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
+                      {call.caller_phone || "\u2014"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
+                      {call.call_direction || "\u2014"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
+                      {formatDuration(call.duration_seconds)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
+                      {call.call_outcome || "\u2014"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
+                      {call.artist_mentioned || "\u2014"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted max-w-[300px] truncate">
+                      {truncate(call.transcript_summary, 60)}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

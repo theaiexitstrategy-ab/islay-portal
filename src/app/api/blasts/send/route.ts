@@ -1,40 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listRecords, createRecord } from "@/lib/airtable";
+import { getSupabaseAdmin } from "@/lib/supabase";
 import { sendSMS } from "@/lib/twilio";
-
-const LEADS_TABLE_ID = process.env.AIRTABLE_LEADS_TABLE_ID!;
-const BLASTS_TABLE_ID = process.env.AIRTABLE_BLASTS_TABLE_ID!;
-
-function buildFilter(
-  segment: string,
-  artistFilter?: string,
-): string | undefined {
-  switch (segment) {
-    case "all":
-      return undefined;
-    case "first_timers":
-      return "{Booking Confirmed}=FALSE()";
-    case "returning":
-      return "{Booking Confirmed}=TRUE()";
-    case "no_shows":
-      return '{Status}="No Show"';
-    case "by_artist":
-      return `AND({Artist}="${artistFilter}")`;
-    default:
-      return undefined;
-  }
-}
+import type { Lead } from "@/types/database";
 
 export async function POST(request: NextRequest) {
   try {
     const { name, message, promoCode, segment, artistFilter } =
       await request.json();
 
-    const filterByFormula = buildFilter(segment, artistFilter);
+    const supabase = getSupabaseAdmin();
 
-    const leads = await listRecords(LEADS_TABLE_ID, {
-      ...(filterByFormula ? { filterByFormula } : {}),
-    });
+    // Build query based on segment
+    let query = supabase.from("leads").select("*");
+
+    switch (segment) {
+      case "first_timers":
+        query = query.eq("booking_confirmed", false);
+        break;
+      case "returning":
+        query = query.eq("booking_confirmed", true);
+        break;
+      case "no_shows":
+        query = query.eq("lead_status", "No Show");
+        break;
+      case "by_artist":
+        query = query.eq("artist_selected", artistFilter);
+        break;
+      // "all" — no filter
+    }
+
+    const { data: leads, error } = await query;
+    if (error) throw error;
 
     let finalMessage = message;
     if (promoCode) {
@@ -44,13 +40,12 @@ export async function POST(request: NextRequest) {
     let sent = 0;
     let failed = 0;
 
-    for (const lead of leads) {
-      const phone = (lead.fields as Record<string, unknown>)["Phone"] as string;
-      if (!phone) {
+    for (const lead of (leads as Lead[]) || []) {
+      if (!lead.phone) {
         failed++;
         continue;
       }
-      const result = await sendSMS(phone, finalMessage);
+      const result = await sendSMS(lead.phone, finalMessage);
       if (result.success) {
         sent++;
       } else {
@@ -58,14 +53,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await createRecord(BLASTS_TABLE_ID, {
-      "Blast Name": name,
-      Message: message,
-      "Date Sent": new Date().toISOString(),
-      Recipients: leads.length,
-      Delivered: sent,
-      Status: "Sent",
+    // Create blast record
+    const { error: insertError } = await supabase.from("blasts").insert({
+      blast_name: name,
+      message_body: message,
+      sent_at: new Date().toISOString(),
+      total_recipients: leads?.length ?? 0,
+      delivered_count: sent,
+      failed_count: failed,
+      promo_code: promoCode || null,
+      target_segment: segment,
+      artist_filter: segment === "by_artist" ? artistFilter : null,
+      status: "Sent",
     });
+
+    if (insertError) console.error("Failed to record blast:", insertError);
 
     return NextResponse.json({ sent, failed });
   } catch (error) {

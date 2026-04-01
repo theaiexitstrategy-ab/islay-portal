@@ -2,20 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import PortalLayout from "@/components/PortalLayout";
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
-
-interface LeadRecord {
-  id: string;
-  fields: Record<string, unknown>;
-}
-
-interface ArtistRecord {
-  id: string;
-  fields: Record<string, unknown>;
-}
+import type { Lead, Artist } from "@/types/database";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -36,8 +23,8 @@ const statusColors: Record<string, string> = {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function formatDate(dateStr: unknown): string {
-  if (!dateStr || typeof dateStr !== "string") return "\u2014";
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "\u2014";
   try {
     return new Date(dateStr).toLocaleDateString("en-US", {
       month: "short",
@@ -49,8 +36,8 @@ function formatDate(dateStr: unknown): string {
   }
 }
 
-function truncate(text: unknown, max = 40): string {
-  if (!text || typeof text !== "string") return "\u2014";
+function truncate(text: string | null, max = 40): string {
+  if (!text) return "\u2014";
   return text.length > max ? text.slice(0, max) + "\u2026" : text;
 }
 
@@ -91,46 +78,22 @@ function SkeletonTable({ rows = 8 }: { rows?: number }) {
 
 function SlideOver({
   lead,
-  artistMap,
   onClose,
   onSaved,
 }: {
-  lead: LeadRecord;
-  artistMap: Map<string, string>;
+  lead: Lead;
   onClose: () => void;
-  onSaved: (updated: LeadRecord) => void;
+  onSaved: (updated: Lead) => void;
 }) {
-  const f = lead.fields;
-
-  const [status, setStatus] = useState<string>(
-    (f["Lead Status"] as string) || "New",
-  );
-  const [bookingConfirmed, setBookingConfirmed] = useState<boolean>(
-    !!(f["Booking Confirmed"] as boolean),
-  );
-  const [promoClaimed, setPromoClaimed] = useState<boolean>(
-    !!(f["Promo Claimed"] as boolean),
-  );
-  const [notes, setNotes] = useState<string>(
-    (f["Notes"] as string) || "",
-  );
+  const [status, setStatus] = useState<string>(lead.lead_status || "New");
+  const [bookingConfirmed, setBookingConfirmed] = useState(lead.booking_confirmed);
+  const [promoClaimed, setPromoClaimed] = useState(lead.promo_claimed);
+  const [notes, setNotes] = useState(lead.notes || "");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
-
-  // Resolve artist name
-  const artistName = useMemo(() => {
-    const raw = f["Artist Selected"];
-    if (typeof raw === "string") return raw;
-    if (Array.isArray(raw)) {
-      return raw
-        .map((id: string) => artistMap.get(id) || id)
-        .join(", ");
-    }
-    return "\u2014";
-  }, [f, artistMap]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -141,10 +104,10 @@ function SlideOver({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fields: {
-            "Lead Status": status,
-            "Booking Confirmed": bookingConfirmed,
-            "Promo Claimed": promoClaimed,
-            Notes: notes,
+            lead_status: status,
+            booking_confirmed: bookingConfirmed,
+            promo_claimed: promoClaimed,
+            notes,
           },
         }),
       });
@@ -206,17 +169,11 @@ function SlideOver({
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {/* Read-only details */}
           <div className="space-y-3">
-            <Detail label="Name" value={(f["Full Name"] as string) || "\u2014"} />
-            <Detail label="Phone" value={(f["Phone Number"] as string) || "\u2014"} />
-            <Detail label="Artist" value={artistName} />
-            <Detail
-              label="Source"
-              value={(f["Lead Source"] as string) || "\u2014"}
-            />
-            <Detail
-              label="Date Entered"
-              value={formatDate(f["Date Entered Funnel"])}
-            />
+            <Detail label="Name" value={lead.full_name || "\u2014"} />
+            <Detail label="Phone" value={lead.phone || "\u2014"} />
+            <Detail label="Artist" value={lead.artist_selected || "\u2014"} />
+            <Detail label="Source" value={lead.lead_source || "\u2014"} />
+            <Detail label="Date Entered" value={formatDate(lead.date_entered)} />
           </div>
 
           <hr className="border-border" />
@@ -320,8 +277,8 @@ function Detail({ label, value }: { label: string; value: string }) {
 /* ------------------------------------------------------------------ */
 
 export default function LeadsPage() {
-  const [leads, setLeads] = useState<LeadRecord[]>([]);
-  const [artists, setArtists] = useState<ArtistRecord[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [artists, setArtists] = useState<Artist[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -330,7 +287,7 @@ export default function LeadsPage() {
   const [artistFilter, setArtistFilter] = useState("All");
 
   // Slide-over
-  const [selectedLead, setSelectedLead] = useState<LeadRecord | null>(null);
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
   /* Fetch data on mount */
   useEffect(() => {
@@ -353,37 +310,13 @@ export default function LeadsPage() {
     fetchData();
   }, []);
 
-  /* Build artist id -> name map */
-  const artistMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const a of artists) {
-      const name = (a.fields["Name"] as string) || "Unknown";
-      map.set(a.id, name);
-    }
-    return map;
-  }, [artists]);
-
-  /* Resolve artist display name for a lead */
-  const getArtistName = useCallback(
-    (lead: LeadRecord): string => {
-      const raw = lead.fields["Artist Selected"];
-      if (typeof raw === "string") return raw;
-      if (Array.isArray(raw)) {
-        return raw.map((id: string) => artistMap.get(id) || id).join(", ");
-      }
-      return "\u2014";
-    },
-    [artistMap],
-  );
-
   /* Filtered leads */
   const filteredLeads = useMemo(() => {
     return leads.filter((lead) => {
-      const f = lead.fields;
-      const name = ((f["Full Name"] as string) || "").toLowerCase();
-      const phone = ((f["Phone Number"] as string) || "").toLowerCase();
-      const status = (f["Lead Status"] as string) || "New";
-      const artistName = getArtistName(lead).toLowerCase();
+      const name = (lead.full_name || "").toLowerCase();
+      const phone = (lead.phone || "").toLowerCase();
+      const status = lead.lead_status || "New";
+      const artist = (lead.artist_selected || "").toLowerCase();
 
       // Search filter
       const q = search.toLowerCase();
@@ -393,16 +326,16 @@ export default function LeadsPage() {
       if (statusFilter !== "All" && status !== statusFilter) return false;
 
       // Artist filter
-      if (artistFilter !== "All" && !artistName.includes(artistFilter.toLowerCase()))
+      if (artistFilter !== "All" && !artist.includes(artistFilter.toLowerCase()))
         return false;
 
       return true;
     });
-  }, [leads, search, statusFilter, artistFilter, getArtistName]);
+  }, [leads, search, statusFilter, artistFilter]);
 
   /* Handle slide-over save */
   const handleLeadSaved = useCallback(
-    (updated: LeadRecord) => {
+    (updated: Lead) => {
       setLeads((prev) =>
         prev.map((l) => (l.id === updated.id ? updated : l)),
       );
@@ -415,8 +348,7 @@ export default function LeadsPage() {
   const artistNames = useMemo(() => {
     const names: string[] = [];
     for (const a of artists) {
-      const name = a.fields["Name"] as string;
-      if (name) names.push(name);
+      if (a.name) names.push(a.name);
     }
     return names.sort();
   }, [artists]);
@@ -505,12 +437,9 @@ export default function LeadsPage() {
               </thead>
               <tbody>
                 {filteredLeads.map((lead) => {
-                  const f = lead.fields;
-                  const status = (f["Lead Status"] as string) || "New";
+                  const status = lead.lead_status || "New";
                   const badgeClass =
                     statusColors[status] || "bg-border text-text-muted";
-                  const promo = !!(f["Promo Claimed"] as boolean);
-                  const booked = !!(f["Booking Confirmed"] as boolean);
 
                   return (
                     <tr
@@ -519,29 +448,29 @@ export default function LeadsPage() {
                       className="border-b border-border last:border-0 hover:bg-white/[0.03] transition-colors cursor-pointer"
                     >
                       <td className="px-4 py-3 text-sm text-text whitespace-nowrap">
-                        {(f["Full Name"] as string) || "\u2014"}
+                        {lead.full_name || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {(f["Phone Number"] as string) || "\u2014"}
+                        {lead.phone || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {getArtistName(lead)}
+                        {lead.artist_selected || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {(f["Lead Source"] as string) || "\u2014"}
+                        {lead.lead_source || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {formatDate(f["Date Entered Funnel"])}
+                        {formatDate(lead.date_entered)}
                       </td>
                       <td className="px-4 py-3 text-sm text-center whitespace-nowrap">
-                        {promo ? (
+                        {lead.promo_claimed ? (
                           <span className="text-success">&#10003;</span>
                         ) : (
                           <span className="text-text-muted">&mdash;</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-center whitespace-nowrap">
-                        {booked ? (
+                        {lead.booking_confirmed ? (
                           <span className="text-success">&#10003;</span>
                         ) : (
                           <span className="text-text-muted">&mdash;</span>
@@ -555,7 +484,7 @@ export default function LeadsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted max-w-[200px] truncate">
-                        {truncate(f["Notes"])}
+                        {truncate(lead.notes)}
                       </td>
                     </tr>
                   );
@@ -570,7 +499,6 @@ export default function LeadsPage() {
       {selectedLead && (
         <SlideOver
           lead={selectedLead}
-          artistMap={artistMap}
           onClose={() => setSelectedLead(null)}
           onSaved={handleLeadSaved}
         />
