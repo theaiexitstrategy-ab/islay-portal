@@ -1,6 +1,6 @@
 // Supabase Edge Function: inbound-lead
 // Receives POST from Make.com webhook, writes to leads table,
-// then sends a welcome SMS via Twilio with promo code + booking link.
+// checks SMS credit balance, then sends a welcome SMS via Twilio.
 //
 // Deploy: supabase functions deploy inbound-lead --no-verify-jwt
 // URL:    https://uouoczmxigizkqszagdl.supabase.co/functions/v1/inbound-lead
@@ -82,6 +82,8 @@ Deno.serve(async (req) => {
       }
     }
 
+    const clientId = body.client_id || body.clientId || "islay_studios";
+
     const lead = {
       full_name: body.full_name || body.fullName || body.name || null,
       phone: rawPhone,
@@ -97,7 +99,7 @@ Deno.serve(async (req) => {
         body.booking_platform || body.bookingPlatform || null,
       booking_url: body.booking_url || body.bookingUrl || null,
       notes: body.notes || null,
-      client_id: body.client_id || body.clientId || "islay_studios",
+      client_id: clientId,
       lead_status: "New",
       date_entered: new Date().toISOString(),
     };
@@ -121,46 +123,92 @@ Deno.serve(async (req) => {
       });
     }
 
-    // --- Send welcome SMS ---
+    // --- Check credit balance before sending SMS ---
     let smsDelivered = false;
+    let smsStatus: string | null = null;
 
     if (lead.phone) {
-      // Look up booking URL from artists table
-      let bookingUrl = DEFAULT_BOOKING_URL;
+      // Look up client's credit balance
+      const { data: creditRow } = await supabase
+        .from("credits")
+        .select("balance")
+        .eq("client_id", clientId)
+        .single();
 
-      if (lead.artist_selected) {
-        const { data: artist } = await supabase
-          .from("artists")
-          .select("booking_url")
-          .eq("name", lead.artist_selected)
-          .single();
+      const balance = creditRow?.balance ?? 0;
 
-        if (artist?.booking_url) {
-          bookingUrl = artist.booking_url;
+      if (balance <= 0) {
+        // No credits — skip SMS, mark as failed
+        smsStatus = "failed_no_credits";
+        await supabase
+          .from("leads")
+          .update({ sms_delivered: false, sms_status: "failed_no_credits" })
+          .eq("id", data.id);
+
+        console.log(`SMS skipped for lead ${data.id}: no credits remaining for client ${clientId}`);
+      } else {
+        // Has credits — deduct 1 and send SMS
+        // Look up booking URL from artists table
+        let bookingUrl = DEFAULT_BOOKING_URL;
+
+        if (lead.artist_selected) {
+          const { data: artist } = await supabase
+            .from("artists")
+            .select("booking_url")
+            .eq("name", lead.artist_selected)
+            .single();
+
+          if (artist?.booking_url) {
+            bookingUrl = artist.booking_url;
+          }
         }
+
+        // Extract first name from full_name
+        const firstName = lead.full_name
+          ? lead.full_name.split(" ")[0]
+          : "there";
+
+        const smsBody =
+          `Hey ${firstName}, thanks for connecting with iSlay Studios! ` +
+          `Here's your $10 off promo code: SLAY10. ` +
+          `Book here: ${bookingUrl}`;
+
+        smsDelivered = await sendSMS(lead.phone, smsBody);
+        smsStatus = smsDelivered ? "sent" : "failed";
+
+        if (smsDelivered) {
+          // Deduct 1 credit
+          await supabase
+            .from("credits")
+            .update({ balance: balance - 1 })
+            .eq("client_id", clientId);
+
+          // Log the transaction
+          await supabase
+            .from("credit_transactions")
+            .insert({
+              client_id: clientId,
+              amount: -1,
+              description: `SMS sent to lead: ${lead.full_name || lead.phone}`,
+              lead_id: data.id,
+            });
+        }
+
+        // Mark sms_delivered and sms_status on the lead record
+        await supabase
+          .from("leads")
+          .update({ sms_delivered: smsDelivered, sms_status: smsStatus })
+          .eq("id", data.id);
       }
-
-      // Extract first name from full_name
-      const firstName = lead.full_name
-        ? lead.full_name.split(" ")[0]
-        : "there";
-
-      const smsBody =
-        `Hey ${firstName}, thanks for connecting with iSlay Studios! ` +
-        `Here's your $10 off promo code: SLAY10. ` +
-        `Book here: ${bookingUrl}`;
-
-      smsDelivered = await sendSMS(lead.phone, smsBody);
-
-      // Mark sms_delivered on the lead record
-      await supabase
-        .from("leads")
-        .update({ sms_delivered: smsDelivered })
-        .eq("id", data.id);
     }
 
     return new Response(
-      JSON.stringify({ success: true, id: data.id, sms_delivered: smsDelivered }),
+      JSON.stringify({
+        success: true,
+        id: data.id,
+        sms_delivered: smsDelivered,
+        sms_status: smsStatus,
+      }),
       {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -14,6 +14,7 @@ export interface Lead {
   booking_confirmed: boolean;
   appointment_date: string | null;
   sms_delivered: boolean;
+  sms_status: string | null;
   lead_status: string;
   notes: string | null;
   client_id: string;
@@ -60,4 +61,21 @@ export interface Artist {
   total_leads: number;
   total_bookings: number;
   active: boolean;
+}
+
+export interface Credit {
+  id: string;
+  client_id: string;
+  balance: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreditTransaction {
+  id: string;
+  client_id: string;
+  amount: number;
+  description: string | null;
+  lead_id: string | null;
+  created_at: string;
 }
