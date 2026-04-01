@@ -72,9 +72,19 @@ Deno.serve(async (req) => {
     // Map incoming webhook fields to our leads table columns.
     // Make.com may send fields with various naming conventions —
     // we normalize them here.
+    // Normalize phone to E.164 format (+1XXXXXXXXXX)
+    let rawPhone: string | null =
+      body.phone || body.phone_number || body.phoneNumber || null;
+    if (rawPhone) {
+      rawPhone = rawPhone.replace(/[\s\-().]/g, ""); // strip formatting
+      if (!rawPhone.startsWith("+")) {
+        rawPhone = "+1" + rawPhone; // assume US if no country code
+      }
+    }
+
     const lead = {
       full_name: body.full_name || body.fullName || body.name || null,
-      phone: body.phone || body.phone_number || body.phoneNumber || null,
+      phone: rawPhone,
       email: body.email || null,
       lead_source: body.lead_source || body.leadSource || body.source || null,
       artist_selected:
