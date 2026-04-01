@@ -7,6 +7,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("leads")
       .select("*")
+      .eq("client_id", "islay_studios")
       .order("date_entered", { ascending: false });
 
     if (error) throw error;

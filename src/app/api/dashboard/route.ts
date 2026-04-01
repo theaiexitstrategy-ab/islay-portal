@@ -7,7 +7,8 @@ export async function GET() {
 
     const { data: leads, error } = await supabase
       .from("leads")
-      .select("date_entered, promo_claimed, booking_confirmed");
+      .select("date_entered, promo_claimed, booking_confirmed, sms_delivered, sms_status")
+      .eq("client_id", "islay_studios");
 
     if (error) throw error;
 
@@ -18,6 +19,8 @@ export async function GET() {
     let newThisWeek = 0;
     let promoClaims = 0;
     let bookingsConfirmed = 0;
+    let smsSent = 0;
+    let smsFailed = 0;
 
     for (const lead of leads || []) {
       if (lead.date_entered && new Date(lead.date_entered) >= oneWeekAgo) {
@@ -25,6 +28,8 @@ export async function GET() {
       }
       if (lead.promo_claimed) promoClaims++;
       if (lead.booking_confirmed) bookingsConfirmed++;
+      if (lead.sms_delivered || lead.sms_status === "sent") smsSent++;
+      if (lead.sms_status === "failed" || lead.sms_status === "failed_no_credits") smsFailed++;
     }
 
     return NextResponse.json({
@@ -32,6 +37,8 @@ export async function GET() {
       newThisWeek,
       promoClaims,
       bookingsConfirmed,
+      smsSent,
+      smsFailed,
     });
   } catch (error) {
     console.error("Failed to fetch dashboard stats:", error);

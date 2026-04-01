@@ -146,7 +146,12 @@ export default function DashboardPage() {
       .channel("leads-realtime")
       .on<Lead>(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "leads" },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "leads",
+          filter: "client_id=eq.islay_studios",
+        },
         (payload) => {
           // Prepend the new lead to the list (keep max 10)
           setLeads((prev) => [payload.new, ...prev].slice(0, 10));
