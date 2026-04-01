@@ -5,12 +5,19 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin();
 
+    // Use select("*") to avoid failing if specific columns don't exist yet
     const { data: leads, error } = await supabase
       .from("leads")
-      .select("date_entered, promo_claimed, booking_confirmed, sms_delivered, sms_status")
+      .select("*")
       .eq("client_id", "islay_studios");
 
-    if (error) throw error;
+    if (error) {
+      console.error("Dashboard query error:", error);
+      return NextResponse.json(
+        { error: error.message, code: error.code, details: error.details },
+        { status: 500 },
+      );
+    }
 
     const now = new Date();
     const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);

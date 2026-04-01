@@ -98,10 +98,14 @@ export default function DashboardPage() {
         const artistsData = await artistsRes.json();
 
         if (!dashRes.ok || !leadsRes.ok || !artistsRes.ok) {
-          console.error("API error", { dashData, leadsData, artistsData });
+          console.error("API error", {
+            dashboard: { status: dashRes.status, data: dashData },
+            leads: { status: leadsRes.status, data: leadsData },
+            artists: { status: artistsRes.status, data: artistsData },
+          });
         }
 
-        setStats(dashData);
+        if (dashRes.ok) setStats(dashData);
 
         const leadsArray: Lead[] = Array.isArray(leadsData) ? leadsData : [];
         // Only show the 10 most recent on the dashboard
