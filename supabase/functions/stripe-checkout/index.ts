@@ -12,10 +12,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-const BUNDLES: Record<string, { name: string; price: number; credits: number }> = {
-  starter: { name: "Starter — 500 Credits", price: 2500, credits: 500 },
-  growth:  { name: "Growth — 1,100 Credits", price: 5000, credits: 1100 },
-  pro:     { name: "Pro — 2,500 Credits",    price: 10000, credits: 2500 },
+const BUNDLES: Record<string, { name: string; price: number; credits: number; costPerCredit: number }> = {
+  starter: { name: "Starter — 250 Credits",   price: 2500,  credits: 250,  costPerCredit: 0.10 },
+  growth:  { name: "Growth — 625 Credits",    price: 5000,  credits: 625,  costPerCredit: 0.08 },
+  pro:     { name: "Pro — 1,666 Credits",     price: 10000, credits: 1666, costPerCredit: 0.06 },
 };
 
 Deno.serve(async (req) => {
@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
     params.set("metadata[client_id]", client_id || "islay_studios");
     params.set("metadata[bundle_id]", bundle_id);
     params.set("metadata[credits]", String(bundle.credits));
+    params.set("metadata[cost_per_credit]", String(bundle.costPerCredit));
 
     const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",

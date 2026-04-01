@@ -77,5 +77,18 @@ export interface CreditTransaction {
   amount: number;
   description: string | null;
   lead_id: string | null;
+  bundle_type: string | null;
+  cost_per_credit: number | null;
   created_at: string;
+}
+
+export interface AutoReload {
+  id: string;
+  client_id: string;
+  enabled: boolean;
+  threshold: number;
+  bundle_type: string;
+  stripe_payment_method_id: string | null;
+  created_at: string;
+  updated_at: string;
 }

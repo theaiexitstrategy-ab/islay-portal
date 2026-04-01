@@ -1,12 +1,14 @@
 // Supabase Edge Function: inbound-lead
 // Receives POST from Make.com webhook, writes to leads table,
-// checks SMS credit balance, then sends a welcome SMS via Twilio.
+// checks SMS credit balance, sends welcome SMS via Twilio,
+// and triggers auto-reload if threshold is hit.
 //
 // Deploy: supabase functions deploy inbound-lead --no-verify-jwt
 // URL:    https://uouoczmxigizkqszagdl.supabase.co/functions/v1/inbound-lead
 //
 // Required secrets (set via supabase secrets set):
-//   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+//   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
+//   STRIPE_SECRET_KEY
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -17,6 +19,12 @@ const corsHeaders = {
 };
 
 const DEFAULT_BOOKING_URL = "https://www.islaystudiosllc.com";
+
+const BUNDLES: Record<string, { price: number; credits: number; costPerCredit: number }> = {
+  starter: { price: 2500,  credits: 250,  costPerCredit: 0.10 },
+  growth:  { price: 5000,  credits: 625,  costPerCredit: 0.08 },
+  pro:     { price: 10000, credits: 1666, costPerCredit: 0.06 },
+};
 
 async function sendSMS(to: string, body: string): Promise<boolean> {
   const sid = Deno.env.get("TWILIO_ACCOUNT_SID")!;
@@ -53,8 +61,104 @@ async function sendSMS(to: string, body: string): Promise<boolean> {
   }
 }
 
+async function triggerAutoReload(
+  clientId: string,
+  currentBalance: number,
+  supabase: ReturnType<typeof createClient>,
+): Promise<void> {
+  // Check auto-reload settings
+  const { data: settings } = await supabase
+    .from("auto_reload")
+    .select("*")
+    .eq("client_id", clientId)
+    .single();
+
+  if (!settings?.enabled || !settings.stripe_payment_method_id) return;
+  if (currentBalance > settings.threshold) return;
+
+  const bundle = BUNDLES[settings.bundle_type];
+  if (!bundle) return;
+
+  const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+  if (!stripeKey) {
+    console.error("STRIPE_SECRET_KEY not set, cannot auto-reload");
+    return;
+  }
+
+  try {
+    // Create a PaymentIntent with the saved payment method
+    const params = new URLSearchParams();
+    params.set("amount", String(bundle.price));
+    params.set("currency", "usd");
+    params.set("payment_method", settings.stripe_payment_method_id);
+    params.set("confirm", "true");
+    params.set("off_session", "true");
+    params.set("description", `Auto-reload: ${settings.bundle_type} bundle for ${clientId}`);
+    params.set("metadata[client_id]", clientId);
+    params.set("metadata[bundle_id]", settings.bundle_type);
+    params.set("metadata[credits]", String(bundle.credits));
+    params.set("metadata[auto_reload]", "true");
+
+    const res = await fetch("https://api.stripe.com/v1/payment_intents", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+
+    const pi = await res.json();
+
+    if (!res.ok || pi.status !== "succeeded") {
+      console.error("Auto-reload Stripe charge failed:", pi.error?.message || pi.status);
+      await supabase.from("credit_transactions").insert({
+        client_id: clientId,
+        amount: 0,
+        description: `Auto-reload FAILED: ${settings.bundle_type} bundle — ${pi.error?.message || "charge not succeeded"}`,
+        bundle_type: settings.bundle_type,
+      });
+      return;
+    }
+
+    // Add credits to balance
+    const { data: creditRow } = await supabase
+      .from("credits")
+      .select("balance")
+      .eq("client_id", clientId)
+      .single();
+
+    const newBalance = (creditRow?.balance ?? 0) + bundle.credits;
+
+    await supabase
+      .from("credits")
+      .update({ balance: newBalance })
+      .eq("client_id", clientId);
+
+    // Log the transaction
+    const amountPaid = (bundle.price / 100).toFixed(2);
+    await supabase.from("credit_transactions").insert({
+      client_id: clientId,
+      amount: bundle.credits,
+      description: `Auto-reload: ${bundle.credits} credits (${settings.bundle_type} bundle) — $${amountPaid}`,
+      bundle_type: settings.bundle_type,
+      cost_per_credit: bundle.costPerCredit,
+    });
+
+    // Send SMS notification to client about auto-reload
+    const twilioFrom = Deno.env.get("TWILIO_PHONE_NUMBER");
+    // Look up a notification number for the client (use studio owner's phone if available)
+    // For now, log the notification — in production, store a notification_phone on auto_reload
+    console.log(
+      `Auto-reload fired for ${clientId}: charged $${amountPaid}, added ${bundle.credits} credits. New balance: ${newBalance}`,
+    );
+
+  } catch (err) {
+    console.error("Auto-reload error:", err);
+  }
+}
+
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -69,16 +173,12 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
-    // Map incoming webhook fields to our leads table columns.
-    // Make.com may send fields with various naming conventions —
-    // we normalize them here.
-    // Normalize phone to E.164 format (+1XXXXXXXXXX)
     let rawPhone: string | null =
       body.phone || body.phone_number || body.phoneNumber || null;
     if (rawPhone) {
-      rawPhone = rawPhone.replace(/[\s\-().]/g, ""); // strip formatting
+      rawPhone = rawPhone.replace(/[\s\-().]/g, "");
       if (!rawPhone.startsWith("+")) {
-        rawPhone = "+1" + rawPhone; // assume US if no country code
+        rawPhone = "+1" + rawPhone;
       }
     }
 
@@ -90,10 +190,7 @@ Deno.serve(async (req) => {
       email: body.email || null,
       lead_source: body.lead_source || body.leadSource || body.source || null,
       artist_selected:
-        body.artist_selected ||
-        body.artistSelected ||
-        body.artist ||
-        null,
+        body.artist_selected || body.artistSelected || body.artist || null,
       promo_code: body.promo_code || body.promoCode || "SLAY10",
       booking_platform:
         body.booking_platform || body.bookingPlatform || null,
@@ -128,7 +225,6 @@ Deno.serve(async (req) => {
     let smsStatus: string | null = null;
 
     if (lead.phone) {
-      // Look up client's credit balance
       const { data: creditRow } = await supabase
         .from("credits")
         .select("balance")
@@ -138,7 +234,6 @@ Deno.serve(async (req) => {
       const balance = creditRow?.balance ?? 0;
 
       if (balance <= 0) {
-        // No credits — skip SMS, mark as failed
         smsStatus = "failed_no_credits";
         await supabase
           .from("leads")
@@ -147,8 +242,6 @@ Deno.serve(async (req) => {
 
         console.log(`SMS skipped for lead ${data.id}: no credits remaining for client ${clientId}`);
       } else {
-        // Has credits — deduct 1 and send SMS
-        // Look up booking URL from artists table
         let bookingUrl = DEFAULT_BOOKING_URL;
 
         if (lead.artist_selected) {
@@ -163,7 +256,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Extract first name from full_name
         const firstName = lead.full_name
           ? lead.full_name.split(" ")[0]
           : "there";
@@ -177,24 +269,28 @@ Deno.serve(async (req) => {
         smsStatus = smsDelivered ? "sent" : "failed";
 
         if (smsDelivered) {
+          const newBalance = balance - 1;
+
           // Deduct 1 credit
           await supabase
             .from("credits")
-            .update({ balance: balance - 1 })
+            .update({ balance: newBalance })
             .eq("client_id", clientId);
 
           // Log the transaction
-          await supabase
-            .from("credit_transactions")
-            .insert({
-              client_id: clientId,
-              amount: -1,
-              description: `SMS sent to lead: ${lead.full_name || lead.phone}`,
-              lead_id: data.id,
-            });
+          await supabase.from("credit_transactions").insert({
+            client_id: clientId,
+            amount: -1,
+            description: `SMS sent to lead: ${lead.full_name || lead.phone}`,
+            lead_id: data.id,
+          });
+
+          // Check auto-reload threshold in background
+          triggerAutoReload(clientId, newBalance, supabase).catch((err) =>
+            console.error("Auto-reload check error:", err),
+          );
         }
 
-        // Mark sms_delivered and sms_status on the lead record
         await supabase
           .from("leads")
           .update({ sms_delivered: smsDelivered, sms_status: smsStatus })
