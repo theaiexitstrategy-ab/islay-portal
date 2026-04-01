@@ -103,7 +103,7 @@ function SlideOver({
   const f = lead.fields;
 
   const [status, setStatus] = useState<string>(
-    (f["Status"] as string) || "New",
+    (f["Lead Status"] as string) || "New",
   );
   const [bookingConfirmed, setBookingConfirmed] = useState<boolean>(
     !!(f["Booking Confirmed"] as boolean),
@@ -122,7 +122,7 @@ function SlideOver({
 
   // Resolve artist name
   const artistName = useMemo(() => {
-    const raw = f["Artist Name"] ?? f["Artist"];
+    const raw = f["Artist Selected"];
     if (typeof raw === "string") return raw;
     if (Array.isArray(raw)) {
       return raw
@@ -141,7 +141,7 @@ function SlideOver({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fields: {
-            Status: status,
+            "Lead Status": status,
             "Booking Confirmed": bookingConfirmed,
             "Promo Claimed": promoClaimed,
             Notes: notes,
@@ -206,16 +206,16 @@ function SlideOver({
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {/* Read-only details */}
           <div className="space-y-3">
-            <Detail label="Name" value={(f["Name"] as string) || "\u2014"} />
-            <Detail label="Phone" value={(f["Phone"] as string) || "\u2014"} />
+            <Detail label="Name" value={(f["Full Name"] as string) || "\u2014"} />
+            <Detail label="Phone" value={(f["Phone Number"] as string) || "\u2014"} />
             <Detail label="Artist" value={artistName} />
             <Detail
               label="Source"
-              value={(f["Source"] as string) || "\u2014"}
+              value={(f["Lead Source"] as string) || "\u2014"}
             />
             <Detail
               label="Date Entered"
-              value={formatDate(f["Date Entered"])}
+              value={formatDate(f["Date Entered Funnel"])}
             />
           </div>
 
@@ -366,7 +366,7 @@ export default function LeadsPage() {
   /* Resolve artist display name for a lead */
   const getArtistName = useCallback(
     (lead: LeadRecord): string => {
-      const raw = lead.fields["Artist Name"] ?? lead.fields["Artist"];
+      const raw = lead.fields["Artist Selected"];
       if (typeof raw === "string") return raw;
       if (Array.isArray(raw)) {
         return raw.map((id: string) => artistMap.get(id) || id).join(", ");
@@ -380,9 +380,9 @@ export default function LeadsPage() {
   const filteredLeads = useMemo(() => {
     return leads.filter((lead) => {
       const f = lead.fields;
-      const name = ((f["Name"] as string) || "").toLowerCase();
-      const phone = ((f["Phone"] as string) || "").toLowerCase();
-      const status = (f["Status"] as string) || "New";
+      const name = ((f["Full Name"] as string) || "").toLowerCase();
+      const phone = ((f["Phone Number"] as string) || "").toLowerCase();
+      const status = (f["Lead Status"] as string) || "New";
       const artistName = getArtistName(lead).toLowerCase();
 
       // Search filter
@@ -506,7 +506,7 @@ export default function LeadsPage() {
               <tbody>
                 {filteredLeads.map((lead) => {
                   const f = lead.fields;
-                  const status = (f["Status"] as string) || "New";
+                  const status = (f["Lead Status"] as string) || "New";
                   const badgeClass =
                     statusColors[status] || "bg-border text-text-muted";
                   const promo = !!(f["Promo Claimed"] as boolean);
@@ -519,19 +519,19 @@ export default function LeadsPage() {
                       className="border-b border-border last:border-0 hover:bg-white/[0.03] transition-colors cursor-pointer"
                     >
                       <td className="px-4 py-3 text-sm text-text whitespace-nowrap">
-                        {(f["Name"] as string) || "\u2014"}
+                        {(f["Full Name"] as string) || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {(f["Phone"] as string) || "\u2014"}
+                        {(f["Phone Number"] as string) || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
                         {getArtistName(lead)}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {(f["Source"] as string) || "\u2014"}
+                        {(f["Lead Source"] as string) || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {formatDate(f["Date Entered"])}
+                        {formatDate(f["Date Entered Funnel"])}
                       </td>
                       <td className="px-4 py-3 text-sm text-center whitespace-nowrap">
                         {promo ? (

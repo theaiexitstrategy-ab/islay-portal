@@ -19,7 +19,7 @@ export async function GET() {
     for (const lead of leads) {
       const fields = lead.fields as Record<string, unknown>;
 
-      const dateEntered = fields["Date Entered"] as string | undefined;
+      const dateEntered = fields["Date Entered Funnel"] as string | undefined;
       if (dateEntered && new Date(dateEntered) >= oneWeekAgo) {
         newThisWeek++;
       }

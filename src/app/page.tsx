@@ -135,7 +135,7 @@ export default function DashboardPage() {
         // We use the leads that came back (up to 10 for display),
         // but for accurate artist stats we rely on what we have
         for (const lead of leadsArray) {
-          const artistIds = lead.fields["Artist"] as string[] | undefined;
+          const artistIds = lead.fields["Artist Selected"] as string[] | undefined;
           const booked = lead.fields["Booking Confirmed"] as boolean | undefined;
           if (artistIds && Array.isArray(artistIds)) {
             for (const aid of artistIds) {
@@ -329,7 +329,7 @@ export default function DashboardPage() {
                 <tbody>
                   {leads.map((lead) => {
                     const f = lead.fields;
-                    const status = (f["Status"] as string) || "New";
+                    const status = (f["Lead Status"] as string) || "New";
                     const badgeClass =
                       statusColors[status] || "bg-border text-text-muted";
                     return (
@@ -338,21 +338,19 @@ export default function DashboardPage() {
                         className="border-b border-border last:border-0 hover:bg-white/[0.02] transition-colors"
                       >
                         <td className="px-4 py-3 text-sm text-text whitespace-nowrap">
-                          {(f["Name"] as string) || "—"}
+                          {(f["Full Name"] as string) || "—"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {(f["Phone"] as string) || "—"}
+                          {(f["Phone Number"] as string) || "—"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {(f["Artist Name"] as string) ||
-                            (f["Artist"] as string) ||
-                            "—"}
+                          {(f["Artist Selected"] as string) || "—"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {(f["Source"] as string) || "—"}
+                          {(f["Lead Source"] as string) || "—"}
                         </td>
                         <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                          {formatDate(f["Date Entered"])}
+                          {formatDate(f["Date Entered Funnel"])}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span
