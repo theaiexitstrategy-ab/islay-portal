@@ -16,7 +16,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-const DEFAULT_BOOKING_URL = "www.islaystudiosllc.com";
+const DEFAULT_BOOKING_URL = "https://www.islaystudiosllc.com";
 
 async function sendSMS(to: string, body: string): Promise<boolean> {
   const sid = Deno.env.get("TWILIO_ACCOUNT_SID")!;

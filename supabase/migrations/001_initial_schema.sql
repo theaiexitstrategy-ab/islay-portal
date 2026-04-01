@@ -115,10 +115,10 @@ alter publication supabase_realtime add table leads;
 -- SEED: Artists
 -- ============================================================
 insert into artists (name, role, booking_platform, booking_url, active) values
-  ('Nathan Slay',    'Owner / Lead Barber',    'Square',    'https://square.site/book/islay-studios',   true),
-  ('Beanz',          'Barber',                 'Square',    'https://square.site/book/islay-studios',   true),
-  ('Fresh',          'Barber',                 'Square',    'https://square.site/book/islay-studios',   true),
-  ('Q',              'Barber',                 'Square',    'https://square.site/book/islay-studios',   true),
-  ('Sherry J',       'Stylist',                'Square',    'https://square.site/book/islay-studios',   true),
-  ('Sabrina Young',  'Stylist',                'Square',    'https://square.site/book/islay-studios',   true),
-  ('Eboni',          'Stylist',                'Square',    'https://square.site/book/islay-studios',   true);
+  ('Nathan Slay',    'Owner / Lead Barber',    'Square',    'https://www.islaystudiosllc.com',   true),
+  ('Beanz',          'Barber',                 'Square',    'https://www.islaystudiosllc.com',   true),
+  ('Fresh',          'Barber',                 'Square',    'https://www.islaystudiosllc.com',   true),
+  ('Q',              'Barber',                 'Square',    'https://www.islaystudiosllc.com',   true),
+  ('Sherry J',       'Stylist',                'Square',    'https://www.islaystudiosllc.com',   true),
+  ('Sabrina Young',  'Stylist',                'Square',    'https://www.islaystudiosllc.com',   true),
+  ('Eboni',          'Stylist',                'Square',    'https://www.islaystudiosllc.com',   true);
