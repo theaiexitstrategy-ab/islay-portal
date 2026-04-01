@@ -46,6 +46,7 @@ Deno.serve(async (req) => {
         body.booking_platform || body.bookingPlatform || null,
       booking_url: body.booking_url || body.bookingUrl || null,
       notes: body.notes || null,
+      client_id: body.client_id || body.clientId || "islay_studios",
       lead_status: "New",
       date_entered: new Date().toISOString(),
     };

@@ -28,6 +28,7 @@ create table if not exists leads (
   sms_delivered boolean default false,
   lead_status   text default 'New',
   notes         text,
+  client_id     text default 'islay_studios',
   created_at    timestamptz default now()
 );
 

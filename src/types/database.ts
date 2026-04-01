@@ -16,6 +16,7 @@ export interface Lead {
   sms_delivered: boolean;
   lead_status: string;
   notes: string | null;
+  client_id: string;
   created_at: string;
 }
 
