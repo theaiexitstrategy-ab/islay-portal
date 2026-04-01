@@ -19,14 +19,23 @@ export async function middleware(req: NextRequest) {
   const refreshToken = req.cookies.get("sb-refresh-token")?.value;
 
   if (!accessToken || !refreshToken) {
+    // For API routes, return 401 instead of redirecting
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
   // Verify the token with Supabase
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    return NextResponse.next();
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
 
   const { data, error } = await supabase.auth.setSession({
     access_token: accessToken,
@@ -34,8 +43,9 @@ export async function middleware(req: NextRequest) {
   });
 
   if (error || !data.session) {
-    // Session invalid — redirect to login
-    const response = NextResponse.redirect(new URL("/login", req.url));
+    const response = pathname.startsWith("/api/")
+      ? NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      : NextResponse.redirect(new URL("/login", req.url));
     response.cookies.delete("sb-access-token");
     response.cookies.delete("sb-refresh-token");
     return response;
