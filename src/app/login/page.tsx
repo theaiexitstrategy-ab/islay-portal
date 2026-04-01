@@ -53,7 +53,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg bg-card border border-border text-text px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              className="w-full rounded-lg bg-bg border border-border text-text px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
               placeholder="user@islaystudiosllc.com"
               autoFocus
             />
@@ -68,7 +68,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg bg-card border border-border text-text px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              className="w-full rounded-lg bg-bg border border-border text-text px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
               placeholder="Enter your password"
             />
           </div>
