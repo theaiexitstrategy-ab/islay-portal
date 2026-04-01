@@ -1,8 +1,12 @@
 // Supabase Edge Function: inbound-lead
-// Receives POST from Make.com webhook and writes to leads table.
+// Receives POST from Make.com webhook, writes to leads table,
+// then sends a welcome SMS via Twilio with promo code + booking link.
 //
 // Deploy: supabase functions deploy inbound-lead --no-verify-jwt
 // URL:    https://uouoczmxigizkqszagdl.supabase.co/functions/v1/inbound-lead
+//
+// Required secrets (set via supabase secrets set):
+//   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -11,6 +15,43 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
+
+const DEFAULT_BOOKING_URL = "www.islaystudiosllc.com";
+
+async function sendSMS(to: string, body: string): Promise<boolean> {
+  const sid = Deno.env.get("TWILIO_ACCOUNT_SID")!;
+  const token = Deno.env.get("TWILIO_AUTH_TOKEN")!;
+  const from = Deno.env.get("TWILIO_PHONE_NUMBER")!;
+
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`;
+  const auth = btoa(`${sid}:${token}`);
+
+  const params = new URLSearchParams();
+  params.set("To", to);
+  params.set("From", from);
+  params.set("Body", body);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      console.error("Twilio error:", err.message || err);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("Twilio fetch error:", err);
+    return false;
+  }
+}
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -70,10 +111,51 @@ Deno.serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ success: true, id: data.id }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // --- Send welcome SMS ---
+    let smsDelivered = false;
+
+    if (lead.phone) {
+      // Look up booking URL from artists table
+      let bookingUrl = DEFAULT_BOOKING_URL;
+
+      if (lead.artist_selected) {
+        const { data: artist } = await supabase
+          .from("artists")
+          .select("booking_url")
+          .eq("name", lead.artist_selected)
+          .single();
+
+        if (artist?.booking_url) {
+          bookingUrl = artist.booking_url;
+        }
+      }
+
+      // Extract first name from full_name
+      const firstName = lead.full_name
+        ? lead.full_name.split(" ")[0]
+        : "there";
+
+      const smsBody =
+        `Hey ${firstName}, thanks for connecting with iSlay Studios! ` +
+        `Here's your $10 off promo code: SLAY10. ` +
+        `Book here: ${bookingUrl}`;
+
+      smsDelivered = await sendSMS(lead.phone, smsBody);
+
+      // Mark sms_delivered on the lead record
+      await supabase
+        .from("leads")
+        .update({ sms_delivered: smsDelivered })
+        .eq("id", data.id);
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, id: data.id, sms_delivered: smsDelivered }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (err) {
     console.error("Edge function error:", err);
     return new Response(
