@@ -83,6 +83,7 @@ export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [artistPerformance, setArtistPerformance] = useState<ArtistPerformance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -97,13 +98,11 @@ export default function DashboardPage() {
         const leadsData = await leadsRes.json();
         const artistsData = await artistsRes.json();
 
-        if (!dashRes.ok || !leadsRes.ok || !artistsRes.ok) {
-          console.error("API error", {
-            dashboard: { status: dashRes.status, data: dashData },
-            leads: { status: leadsRes.status, data: leadsData },
-            artists: { status: artistsRes.status, data: artistsData },
-          });
-        }
+        const errors: string[] = [];
+        if (!dashRes.ok) errors.push(`Dashboard API ${dashRes.status}: ${JSON.stringify(dashData)}`);
+        if (!leadsRes.ok) errors.push(`Leads API ${leadsRes.status}: ${JSON.stringify(leadsData)}`);
+        if (!artistsRes.ok) errors.push(`Artists API ${artistsRes.status}: ${JSON.stringify(artistsData)}`);
+        if (errors.length > 0) setApiError(errors.join(" | "));
 
         if (dashRes.ok) setStats(dashData);
 
@@ -190,6 +189,14 @@ export default function DashboardPage() {
       <h1 className="text-3xl font-bold font-serif text-text mb-8">
         Dashboard
       </h1>
+
+      {/* API Error Banner */}
+      {apiError && (
+        <div className="mb-6 px-4 py-3 rounded-lg bg-error/10 border border-error/30 text-error text-sm font-mono break-all">
+          <p className="font-medium mb-1">API Error:</p>
+          {apiError}
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
