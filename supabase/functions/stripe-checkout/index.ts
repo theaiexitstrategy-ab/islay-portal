@@ -13,9 +13,14 @@ const corsHeaders = {
 };
 
 const BUNDLES: Record<string, { name: string; price: number; credits: number; costPerCredit: number }> = {
+  // Legacy bundle IDs (kept for backwards compatibility)
   starter: { name: "Starter — 250 Credits",   price: 2500,  credits: 250,  costPerCredit: 0.10 },
   growth:  { name: "Growth — 625 Credits",    price: 5000,  credits: 625,  costPerCredit: 0.08 },
   pro:     { name: "Pro — 2,000 Credits",     price: 10000, credits: 2000, costPerCredit: 0.05 },
+  // New package IDs
+  "500":   { name: "500 Credits",             price: 2500,  credits: 500,  costPerCredit: 0.05 },
+  "1000":  { name: "1,000 Credits",           price: 4500,  credits: 1000, costPerCredit: 0.045 },
+  "2500":  { name: "2,500 Credits",           price: 10000, credits: 2500, costPerCredit: 0.04 },
 };
 
 Deno.serve(async (req) => {

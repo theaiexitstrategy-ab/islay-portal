@@ -17,7 +17,7 @@ export async function GET() {
   // Fetch each query independently so one failure doesn't break everything
   const { data: balanceData } = await supabase
     .from("credits")
-    .select("balance")
+    .select("balance, credits_per_sms, low_balance_threshold, account_status, trial_credits_granted, trial_expires_at")
     .eq("client_id", clientId)
     .single();
 
@@ -42,6 +42,9 @@ export async function GET() {
     .gte("created_at", thirtyDaysAgo);
 
   const balance = balanceData?.balance ?? 0;
+  const creditsPerSms = balanceData?.credits_per_sms ?? 1;
+  const lowBalanceThreshold = balanceData?.low_balance_threshold ?? 50;
+  const accountStatus = balanceData?.account_status ?? "active";
   const transactions = transactionsData ?? [];
   const autoReload = autoReloadData ?? null;
 
@@ -52,6 +55,14 @@ export async function GET() {
     runningBalance -= (txn.amount as number) || 0;
     return { ...txn, running_balance: bal };
   });
+
+  // Find last reload date (most recent positive transaction)
+  const lastReload = transactions.find(
+    (t: Record<string, unknown>) => (t.amount as number) > 0,
+  );
+  const lastReloadDate = lastReload
+    ? (lastReload as Record<string, unknown>).created_at
+    : null;
 
   // Calculate average daily SMS usage over last 30 days
   const recentDeductions = recentUsageData ?? [];
@@ -65,6 +76,11 @@ export async function GET() {
 
   return NextResponse.json({
     balance,
+    creditsPerSms: creditsPerSms,
+    lowBalanceThreshold: lowBalanceThreshold,
+    accountStatus: accountStatus,
+    smsRemaining: Math.floor(balance / creditsPerSms),
+    lastReloadDate,
     transactions: transactionsWithBalance,
     autoReload,
     avgDailyUsage: Math.round(avgDailyUsage * 10) / 10,

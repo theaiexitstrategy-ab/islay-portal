@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import PortalLayout from "@/components/PortalLayout";
 import type { Lead, Artist } from "@/types/database";
+import Link from "next/link";
 
 interface DashboardStats {
   totalLeads: number;
@@ -17,6 +18,23 @@ interface ArtistPerformance {
   totalLeads: number;
   totalBookings: number;
   conversionRate: string;
+}
+
+interface CreditTransaction {
+  id: string;
+  amount: number;
+  created_at: string;
+  description?: string;
+}
+
+interface CreditsData {
+  balance: number;
+  transactions: CreditTransaction[];
+  avgDailyUsage: number;
+  projectedDaysRemaining: number;
+  credits_per_sms: number;
+  low_balance_threshold: number;
+  account_status: string;
 }
 
 const statusColors: Record<string, string> = {
@@ -82,29 +100,45 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [artistPerformance, setArtistPerformance] = useState<ArtistPerformance[]>([]);
+  const [credits, setCredits] = useState<CreditsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [dashRes, leadsRes, artistsRes] = await Promise.all([
+        const [dashRes, leadsRes, artistsRes, creditsRes] = await Promise.all([
           fetch("/api/dashboard"),
           fetch("/api/leads"),
           fetch("/api/artists"),
+          fetch("/api/credits"),
         ]);
 
         const dashData = await dashRes.json();
         const leadsData = await leadsRes.json();
         const artistsData = await artistsRes.json();
+        const creditsData = await creditsRes.json();
 
         const errors: string[] = [];
         if (!dashRes.ok) errors.push(`Dashboard API ${dashRes.status}: ${JSON.stringify(dashData)}`);
         if (!leadsRes.ok) errors.push(`Leads API ${leadsRes.status}: ${JSON.stringify(leadsData)}`);
         if (!artistsRes.ok) errors.push(`Artists API ${artistsRes.status}: ${JSON.stringify(artistsData)}`);
+        if (!creditsRes.ok) errors.push(`Credits API ${creditsRes.status}: ${JSON.stringify(creditsData)}`);
         if (errors.length > 0) setApiError(errors.join(" | "));
 
         if (dashRes.ok) setStats(dashData);
+
+        if (creditsRes.ok) {
+          setCredits({
+            balance: creditsData.balance ?? 0,
+            transactions: creditsData.transactions ?? [],
+            avgDailyUsage: creditsData.avgDailyUsage ?? 0,
+            projectedDaysRemaining: creditsData.projectedDaysRemaining ?? 0,
+            credits_per_sms: creditsData.credits_per_sms ?? 1,
+            low_balance_threshold: creditsData.low_balance_threshold ?? 50,
+            account_status: creditsData.account_status ?? "active",
+          });
+        }
 
         const leadsArray: Lead[] = Array.isArray(leadsData) ? leadsData : [];
         // Only show the 10 most recent on the dashboard
@@ -184,6 +218,33 @@ export default function DashboardPage() {
     }
   }
 
+  // Derive credit display values
+  const creditsPerSms = credits?.credits_per_sms ?? 1;
+  const estimatedSmsRemaining = credits
+    ? Math.floor(credits.balance / creditsPerSms)
+    : 0;
+  const lastReloadDate = credits
+    ? (() => {
+        const positiveTransactions = credits.transactions.filter(
+          (t) => t.amount > 0,
+        );
+        if (positiveTransactions.length === 0) return null;
+        // Sort descending by date and take the most recent
+        const sorted = [...positiveTransactions].sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+        return sorted[0].created_at;
+      })()
+    : null;
+
+  const isLowBalance =
+    credits !== null &&
+    credits.account_status !== "trial" &&
+    credits.balance < (credits.low_balance_threshold ?? 50);
+
+  const isTrial = credits?.account_status === "trial";
+
   return (
     <PortalLayout>
       <h1 className="text-3xl font-bold font-serif text-text mb-8">
@@ -195,6 +256,37 @@ export default function DashboardPage() {
         <div className="mb-6 px-4 py-3 rounded-lg bg-error/10 border border-error/30 text-error text-sm font-mono break-all">
           <p className="font-medium mb-1">API Error:</p>
           {apiError}
+        </div>
+      )}
+
+      {/* Trial Banner */}
+      {!loading && isTrial && (
+        <div className="mb-6 bg-gold/10 border border-gold/30 text-gold rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+          <p className="text-sm">
+            You&apos;re on a free trial &mdash; 20 complimentary credits
+            included. Upgrade anytime to run full campaigns.
+          </p>
+          <Link
+            href="/credits"
+            className="px-4 py-2 rounded-lg bg-gold text-black font-semibold text-sm hover:bg-gold/90 shrink-0"
+          >
+            Upgrade
+          </Link>
+        </div>
+      )}
+
+      {/* Low Balance Banner */}
+      {!loading && isLowBalance && !isTrial && (
+        <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+          <p className="text-sm">
+            SMS credits are low. Reload credits to keep your campaigns running.
+          </p>
+          <Link
+            href="/credits"
+            className="px-4 py-2 rounded-lg bg-gold text-black font-semibold text-sm hover:bg-gold/90 shrink-0"
+          >
+            Reload Credits
+          </Link>
         </div>
       )}
 
@@ -296,6 +388,47 @@ export default function DashboardPage() {
           </p>
         )}
       </div>
+
+      {/* Credits Card */}
+      {!loading && credits && (
+        <div className="mb-8">
+          <div className="bg-card rounded-xl border border-border p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold font-serif text-text">
+                SMS Credits
+              </h2>
+              <Link
+                href="/credits"
+                className="px-4 py-2 rounded-lg bg-gold text-black font-semibold text-sm hover:bg-gold/90"
+              >
+                Reload Credits
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div>
+                <p className="text-sm text-text-muted mb-1">Credit Balance</p>
+                <p className="text-2xl font-bold text-gold">
+                  {credits.balance.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-text-muted mb-1">
+                  Estimated SMS Remaining
+                </p>
+                <p className="text-2xl font-bold text-text">
+                  {estimatedSmsRemaining.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-text-muted mb-1">Last Reload</p>
+                <p className="text-2xl font-bold text-text">
+                  {lastReloadDate ? formatDate(lastReloadDate) : "\u2014"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recent Leads */}
       <div className="mb-8">

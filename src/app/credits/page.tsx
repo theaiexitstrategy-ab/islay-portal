@@ -6,47 +6,49 @@ import { createClient } from "@supabase/supabase-js";
 import PortalLayout from "@/components/PortalLayout";
 import type { CreditTransaction, AutoReload } from "@/types/database";
 
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
 interface TransactionWithBalance extends CreditTransaction {
   running_balance: number;
 }
 
-const BUNDLES = [
+const PACKAGES = [
   {
-    id: "starter",
-    name: "Starter",
-    price: "$25",
-    credits: 250,
-    costPerCredit: "$0.10",
-    savings: null,
-    valueMultiple: null,
-    highlight: false,
+    id: "500",
+    name: "500 Credits",
+    price: 25,
+    credits: 500,
+    costPerCredit: "$0.050",
     badge: null,
   },
   {
-    id: "growth",
-    name: "Growth",
-    price: "$50",
-    credits: 625,
-    costPerCredit: "$0.08",
-    savings: "Save 20%",
-    valueMultiple: "2.5x more credits than Starter",
-    highlight: false,
+    id: "1000",
+    name: "1,000 Credits",
+    price: 45,
+    credits: 1000,
+    costPerCredit: "$0.045",
     badge: null,
   },
   {
-    id: "pro",
-    name: "Pro",
-    price: "$100",
-    credits: 2000,
-    costPerCredit: "$0.05",
-    savings: "Save 50%",
-    valueMultiple: "Get 8x more credits than Starter",
-    highlight: true,
+    id: "2500",
+    name: "2,500 Credits",
+    price: 100,
+    credits: 2500,
+    costPerCredit: "$0.040",
     badge: "Best Value",
   },
 ];
 
 const THRESHOLD_OPTIONS = [20, 50, 100];
+
+const CREDITS_PER_SMS = 1;
+const LOW_BALANCE_THRESHOLD = 50;
+
+/* ------------------------------------------------------------------ */
+/*  Page (Suspense wrapper)                                            */
+/* ------------------------------------------------------------------ */
 
 export default function CreditsPage() {
   return (
@@ -67,34 +69,87 @@ export default function CreditsPage() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Content                                                            */
+/* ------------------------------------------------------------------ */
+
 function CreditsContent() {
   const searchParams = useSearchParams();
+
   const [balance, setBalance] = useState<number | null>(null);
-  const [transactions, setTransactions] = useState<TransactionWithBalance[]>([]);
+  const [transactions, setTransactions] = useState<TransactionWithBalance[]>(
+    [],
+  );
   const [autoReload, setAutoReload] = useState<AutoReload | null>(null);
   const [avgDailyUsage, setAvgDailyUsage] = useState<number>(0);
   const [projectedDays, setProjectedDays] = useState<number | null>(null);
+  const [accountStatus, setAccountStatus] = useState<string>("active");
+  const [creditsPerSms, setCreditsPerSms] = useState<number>(CREDITS_PER_SMS);
+  const [lowBalanceThreshold, setLowBalanceThreshold] =
+    useState<number>(LOW_BALANCE_THRESHOLD);
+
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [savingAutoReload, setSavingAutoReload] = useState(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+  } | null>(null);
+
+  const [reloadModalOpen, setReloadModalOpen] = useState(false);
+  const [selectedPackage, setSelectedPackage] = useState<string>(
+    PACKAGES[0].id,
+  );
+
+  /* ---------- search-param toasts (post-checkout redirect) ---------- */
 
   useEffect(() => {
     if (searchParams.get("success") === "true") {
-      showToast("Payment successful! Credits have been added to your account.", "success");
+      showToast(
+        "Payment successful! Credits have been added to your account.",
+        "success",
+      );
     }
     if (searchParams.get("cancelled") === "true") {
       showToast("Payment was cancelled.", "info");
     }
   }, [searchParams]);
 
-  function showToast(message: string, type: "success" | "error" | "info" = "info") {
+  /* ---------- helpers ---------- */
+
+  function showToast(
+    message: string,
+    type: "success" | "error" | "info" = "info",
+  ) {
     setToast({ message, type });
     setTimeout(() => setToast(null), 5000);
   }
 
+  function formatDate(dateStr: string): string {
+    try {
+      return new Date(dateStr).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    } catch {
+      return "\u2014";
+    }
+  }
+
+  function getBalanceColor(bal: number): string {
+    if (bal > 100) return "text-success";
+    if (bal >= 20) return "text-yellow-400";
+    return "text-error";
+  }
+
+  /* ---------- data fetching ---------- */
+
   useEffect(() => {
     fetchCredits();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchCredits() {
@@ -104,15 +159,23 @@ function CreditsContent() {
         fetch("/api/auto-reload"),
       ]);
       const data = await creditsRes.json();
+
       setBalance(data.balance ?? 0);
       setTransactions(data.transactions ?? []);
       setAvgDailyUsage(data.avgDailyUsage ?? 0);
       setProjectedDays(data.projectedDaysRemaining ?? null);
+
+      // DB-level fields (fall back to defaults)
+      setCreditsPerSms(data.credits_per_sms ?? CREDITS_PER_SMS);
+      setLowBalanceThreshold(
+        data.low_balance_threshold ?? LOW_BALANCE_THRESHOLD,
+      );
+      setAccountStatus(data.account_status ?? "active");
+
       if (reloadRes.ok) {
         const reloadData = await reloadRes.json();
         setAutoReload(reloadData ?? null);
       } else {
-        // Use data from credits API as fallback
         setAutoReload(data.autoReload ?? null);
       }
     } catch (err) {
@@ -122,7 +185,8 @@ function CreditsContent() {
     }
   }
 
-  // Realtime subscription for credit balance updates
+  /* ---------- realtime ---------- */
+
   useEffect(() => {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -154,7 +218,6 @@ function CreditsContent() {
           filter: "client_id=eq.islay_studios",
         },
         () => {
-          // Refresh transactions when new ones arrive
           fetchCredits();
         },
       )
@@ -163,7 +226,10 @@ function CreditsContent() {
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ---------- actions ---------- */
 
   async function handleBuyCredits(bundleId: string) {
     setPurchasing(bundleId);
@@ -212,27 +278,27 @@ function CreditsContent() {
     }
   }
 
-  function formatDate(dateStr: string): string {
-    try {
-      return new Date(dateStr).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    } catch {
-      return "—";
-    }
-  }
+  /* ---------- derived values ---------- */
 
-  function getBalanceColor(bal: number): string {
-    if (bal > 100) return "text-success";
-    if (bal >= 20) return "text-yellow-400";
-    return "text-error";
-  }
+  const balanceColor =
+    balance !== null ? getBalanceColor(balance) : "text-gold";
 
-  const balanceColor = balance !== null ? getBalanceColor(balance) : "text-gold";
+  const estimatedSms =
+    balance !== null ? Math.floor(balance / creditsPerSms) : null;
+
+  const lastReloadDate = (() => {
+    const positive = transactions.filter((t) => t.amount > 0);
+    if (positive.length === 0) return null;
+    // transactions are sorted newest-first from the API
+    return positive[0].created_at;
+  })();
+
+  const isLowBalance =
+    balance !== null && balance < lowBalanceThreshold && balance >= 0;
+
+  /* ---------------------------------------------------------------- */
+  /*  RENDER                                                          */
+  /* ---------------------------------------------------------------- */
 
   return (
     <PortalLayout>
@@ -255,7 +321,37 @@ function CreditsContent() {
         </div>
       )}
 
-      {/* Balance Card */}
+      {/* Trial Banner */}
+      {!loading && accountStatus === "trial" && (
+        <div className="mb-6 px-4 py-3 rounded-lg text-sm border bg-gold/10 border-gold/30 text-gold flex items-start gap-3">
+          <InfoIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <span>
+            You&apos;re on a free trial &mdash; 20 complimentary credits
+            included. Upgrade anytime to run full campaigns.
+          </span>
+        </div>
+      )}
+
+      {/* Low Balance Amber Banner */}
+      {!loading && isLowBalance && (
+        <div className="mb-6 px-4 py-3 rounded-lg text-sm border bg-yellow-500/10 border-yellow-500/30 text-yellow-400 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <WarningIcon className="w-5 h-5 flex-shrink-0" />
+            <span>
+              SMS credits are low. Reload credits to keep your campaigns
+              running.
+            </span>
+          </div>
+          <button
+            onClick={() => setReloadModalOpen(true)}
+            className="flex-shrink-0 bg-gold text-black font-semibold text-sm px-4 py-1.5 rounded-lg hover:bg-gold/90 transition-colors"
+          >
+            Reload Credits
+          </button>
+        </div>
+      )}
+
+      {/* ---- Balance Card ---- */}
       <div className="bg-card rounded-xl border border-border p-6 mb-8">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div>
@@ -267,12 +363,18 @@ function CreditsContent() {
                 {balance?.toLocaleString()}
               </p>
             )}
-            <p className="text-sm text-text-muted mt-2">SMS credits remaining</p>
+            <p className="text-sm text-text-muted mt-2">SMS credits</p>
+
             {!loading && balance !== null && (
               <div className="flex flex-wrap gap-4 mt-3">
                 <span className="text-xs text-text-muted">
-                  ~{balance} SMS remaining
+                  ~{estimatedSms?.toLocaleString()} SMS remaining
                 </span>
+                {lastReloadDate && (
+                  <span className="text-xs text-text-muted">
+                    Last reload: {formatDate(lastReloadDate)}
+                  </span>
+                )}
                 {projectedDays !== null && avgDailyUsage > 0 && (
                   <span className="text-xs text-text-muted">
                     ~{projectedDays} days at {avgDailyUsage}/day avg
@@ -282,82 +384,66 @@ function CreditsContent() {
             )}
           </div>
 
-          <div className="flex flex-col gap-3">
-            {/* Low balance warnings */}
-            {!loading && balance !== null && balance < 20 && (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-error/10 border border-error/30">
-                <WarningIcon className="w-5 h-5 text-error flex-shrink-0" />
-                <span className="text-sm text-error font-medium">
-                  Critical: Only {balance} credits left! Purchase more now.
-                </span>
-              </div>
-            )}
-            {!loading && balance !== null && balance >= 20 && balance < 50 && (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-                <WarningIcon className="w-5 h-5 text-yellow-400 flex-shrink-0" />
-                <span className="text-sm text-yellow-400 font-medium">
-                  Low balance: {balance} credits remaining.
-                </span>
-              </div>
-            )}
-
+          <div className="flex flex-col items-end gap-3">
+            <button
+              onClick={() => setReloadModalOpen(true)}
+              className="bg-gold text-black font-semibold text-sm px-6 py-2.5 rounded-lg hover:bg-gold/90 transition-colors"
+            >
+              Reload Credits
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Buy Credits */}
+      {/* ---- Credit Packages ---- */}
       <div className="mb-8">
         <h2 className="text-xl font-semibold font-serif text-text mb-4">
-          Buy Credits
+          Credit Packages
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {BUNDLES.map((bundle) => (
+          {PACKAGES.map((pkg) => (
             <div
-              key={bundle.id}
+              key={pkg.id}
               className={`bg-card rounded-xl border p-6 flex flex-col items-center text-center relative ${
-                bundle.highlight
+                pkg.badge
                   ? "border-gold shadow-lg shadow-gold/10"
                   : "border-border"
               }`}
             >
-              {bundle.badge && (
+              {pkg.badge && (
                 <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs font-bold text-black bg-gold px-3 py-1 rounded-full whitespace-nowrap">
-                  {bundle.badge}
+                  {pkg.badge}
                 </span>
               )}
-              <p className="text-lg font-semibold text-text mt-1">{bundle.name}</p>
-              <p className="text-3xl font-bold text-gold mt-2">{bundle.price}</p>
+              <p className="text-lg font-semibold text-text mt-1">
+                {pkg.name}
+              </p>
+              <p className="text-3xl font-bold text-gold mt-2">
+                ${pkg.price}
+              </p>
               <p className="text-sm text-text-muted mt-1">
-                {bundle.credits.toLocaleString()} credits
+                {pkg.credits.toLocaleString()} credits
               </p>
               <p className="text-xs text-text-muted mt-1">
-                {bundle.costPerCredit} per credit
+                {pkg.costPerCredit} per credit
               </p>
-              {bundle.savings && (
-                <span className="mt-2 text-xs font-medium text-success bg-success/10 px-2 py-0.5 rounded-full">
-                  {bundle.savings}
-                </span>
-              )}
-              {bundle.valueMultiple && (
-                <p className="text-xs text-text-muted mt-1">{bundle.valueMultiple}</p>
-              )}
               <button
-                onClick={() => handleBuyCredits(bundle.id)}
+                onClick={() => handleBuyCredits(pkg.id)}
                 disabled={purchasing !== null}
                 className={`mt-4 w-full px-4 py-2.5 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm ${
-                  bundle.highlight
+                  pkg.badge
                     ? "bg-gold text-black hover:bg-gold/90"
                     : "bg-white/10 text-text hover:bg-white/15"
                 }`}
               >
-                {purchasing === bundle.id ? "Redirecting..." : "Buy Now"}
+                {purchasing === pkg.id ? "Redirecting..." : "Buy Now"}
               </button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Auto-Reload Section */}
+      {/* ---- Auto-Reload Section ---- */}
       <div className="mb-8">
         <h2 className="text-xl font-semibold font-serif text-text mb-4">
           Auto-Reload
@@ -377,7 +463,8 @@ function CreditsContent() {
                     Automatic Credit Reload
                   </p>
                   <p className="text-xs text-text-muted mt-0.5">
-                    Automatically purchase credits when your balance drops below a threshold
+                    Automatically purchase credits when your balance drops below
+                    a threshold
                   </p>
                 </div>
                 <button
@@ -410,7 +497,9 @@ function CreditsContent() {
                       {THRESHOLD_OPTIONS.map((t) => (
                         <button
                           key={t}
-                          onClick={() => handleAutoReloadUpdate({ threshold: t })}
+                          onClick={() =>
+                            handleAutoReloadUpdate({ threshold: t })
+                          }
                           disabled={savingAutoReload}
                           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                             autoReload.threshold === t
@@ -430,20 +519,21 @@ function CreditsContent() {
                       Package to auto-purchase:
                     </p>
                     <div className="flex gap-2 flex-wrap">
-                      {BUNDLES.map((b) => (
+                      {PACKAGES.map((pkg) => (
                         <button
-                          key={b.id}
+                          key={pkg.id}
                           onClick={() =>
-                            handleAutoReloadUpdate({ bundle_type: b.id })
+                            handleAutoReloadUpdate({ bundle_type: pkg.id })
                           }
                           disabled={savingAutoReload}
                           className={`px-4 py-2 rounded-lg text-sm transition-colors ${
-                            autoReload.bundle_type === b.id
+                            autoReload.bundle_type === pkg.id
                               ? "bg-gold text-black font-medium"
                               : "bg-white/5 text-text-muted hover:bg-white/10"
                           }`}
                         >
-                          {b.name} ({b.price} / {b.credits.toLocaleString()} credits)
+                          {pkg.name} (${pkg.price} /{" "}
+                          {pkg.credits.toLocaleString()} credits)
                         </button>
                       ))}
                     </div>
@@ -452,7 +542,9 @@ function CreditsContent() {
                   {/* Saved payment method */}
                   <div className="flex items-center justify-between pt-2 border-t border-border">
                     <div>
-                      <p className="text-xs text-text-muted">Saved Payment Method</p>
+                      <p className="text-xs text-text-muted">
+                        Saved Payment Method
+                      </p>
                       {autoReload.stripe_payment_method_id ? (
                         <p className="text-sm text-text mt-0.5">
                           Card ending in ****{" "}
@@ -460,7 +552,8 @@ function CreditsContent() {
                         </p>
                       ) : (
                         <p className="text-sm text-error mt-0.5">
-                          No payment method saved — auto-reload will not fire
+                          No payment method saved &mdash; auto-reload will not
+                          fire
                         </p>
                       )}
                     </div>
@@ -485,7 +578,7 @@ function CreditsContent() {
         </div>
       </div>
 
-      {/* Transaction History */}
+      {/* ---- Transaction History ---- */}
       <div>
         <h2 className="text-xl font-semibold font-serif text-text mb-4">
           Transaction History
@@ -498,7 +591,7 @@ function CreditsContent() {
                   <div className="h-4 w-1/4 bg-border rounded" />
                   <div className="h-4 w-1/6 bg-border rounded" />
                   <div className="h-4 w-1/4 bg-border rounded" />
-                  <div className="h-4 w-1/8 bg-border rounded" />
+                  <div className="h-4 w-1/12 bg-border rounded" />
                 </div>
               ))}
             </div>
@@ -543,7 +636,7 @@ function CreditsContent() {
                         {formatDate(txn.created_at)}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted max-w-xs truncate">
-                        {txn.description || "—"}
+                        {txn.description || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm whitespace-nowrap">
                         {txn.amount !== 0 ? (
@@ -558,19 +651,19 @@ function CreditsContent() {
                             {txn.amount}
                           </span>
                         ) : (
-                          <span className="text-text-muted">—</span>
+                          <span className="text-text-muted">&mdash;</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
                         {txn.cost_per_credit
                           ? `$${Number(txn.cost_per_credit).toFixed(4)}`
-                          : "—"}
+                          : "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap capitalize">
-                        {txn.bundle_type || "—"}
+                        {txn.bundle_type || "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted whitespace-nowrap">
-                        {txn.running_balance?.toLocaleString() ?? "—"}
+                        {txn.running_balance?.toLocaleString() ?? "\u2014"}
                       </td>
                     </tr>
                   ))}
@@ -580,9 +673,95 @@ function CreditsContent() {
           </div>
         )}
       </div>
+
+      {/* ---- Reload Credits Modal ---- */}
+      {reloadModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setReloadModalOpen(false);
+          }}
+        >
+          <div className="bg-card rounded-xl border border-border p-6 w-full max-w-lg mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold font-serif text-text">
+                Reload Credits
+              </h3>
+              <button
+                onClick={() => setReloadModalOpen(false)}
+                className="text-text-muted hover:text-text transition-colors"
+              >
+                <CloseIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Package radio selection */}
+            <div className="space-y-3 mb-6">
+              {PACKAGES.map((pkg) => (
+                <label
+                  key={pkg.id}
+                  className={`flex items-center gap-4 p-4 rounded-lg border cursor-pointer transition-colors ${
+                    selectedPackage === pkg.id
+                      ? "border-gold bg-gold/5"
+                      : "border-border hover:border-border/80 bg-bg"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="package"
+                    value={pkg.id}
+                    checked={selectedPackage === pkg.id}
+                    onChange={() => setSelectedPackage(pkg.id)}
+                    className="accent-[var(--gold)] w-4 h-4 flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-text">
+                        {pkg.name}
+                      </span>
+                      {pkg.badge && (
+                        <span className="text-[10px] font-bold text-black bg-gold px-2 py-0.5 rounded-full">
+                          {pkg.badge}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-text-muted">
+                      {pkg.costPerCredit} per credit
+                    </span>
+                  </div>
+                  <span className="text-lg font-bold text-gold flex-shrink-0">
+                    ${pkg.price}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {/* Pay button */}
+            <button
+              onClick={() => {
+                setReloadModalOpen(false);
+                handleBuyCredits(selectedPackage);
+              }}
+              disabled={purchasing !== null}
+              className="w-full bg-gold text-black font-semibold text-sm py-3 rounded-lg hover:bg-gold/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {purchasing ? "Redirecting..." : "Pay with Stripe"}
+            </button>
+
+            <p className="text-xs text-text-muted text-center mt-3">
+              You will be redirected to Stripe Checkout to complete your
+              purchase.
+            </p>
+          </div>
+        </div>
+      )}
     </PortalLayout>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Icons                                                              */
+/* ------------------------------------------------------------------ */
 
 function WarningIcon({ className }: { className?: string }) {
   return (
@@ -597,6 +776,42 @@ function WarningIcon({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+      />
+    </svg>
+  );
+}
+
+function InfoIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"
+      />
+    </svg>
+  );
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6 18 18 6M6 6l12 12"
       />
     </svg>
   );
