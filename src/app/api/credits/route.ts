@@ -63,32 +63,11 @@ export async function GET() {
   const projectedDaysRemaining =
     avgDailyUsage > 0 ? Math.floor(balance / avgDailyUsage) : null;
 
-  // Get Twilio balance (optional, never fails the whole response)
-  let twilioBalance: number | null = null;
-  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-  if (twilioSid && twilioToken) {
-    try {
-      const auth = Buffer.from(`${twilioSid}:${twilioToken}`).toString("base64");
-      const res = await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Balance.json`,
-        { headers: { Authorization: `Basic ${auth}` } },
-      );
-      if (res.ok) {
-        const data = await res.json();
-        twilioBalance = parseFloat(data.balance);
-      }
-    } catch {
-      // Twilio balance fetch failed, continue without it
-    }
-  }
-
   return NextResponse.json({
     balance,
     transactions: transactionsWithBalance,
     autoReload,
     avgDailyUsage: Math.round(avgDailyUsage * 10) / 10,
     projectedDaysRemaining,
-    twilioBalance,
   });
 }

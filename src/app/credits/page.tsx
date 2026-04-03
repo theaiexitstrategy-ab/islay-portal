@@ -74,7 +74,6 @@ function CreditsContent() {
   const [autoReload, setAutoReload] = useState<AutoReload | null>(null);
   const [avgDailyUsage, setAvgDailyUsage] = useState<number>(0);
   const [projectedDays, setProjectedDays] = useState<number | null>(null);
-  const [twilioBalance, setTwilioBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
@@ -109,8 +108,6 @@ function CreditsContent() {
       setTransactions(data.transactions ?? []);
       setAvgDailyUsage(data.avgDailyUsage ?? 0);
       setProjectedDays(data.projectedDaysRemaining ?? null);
-      setTwilioBalance(data.twilioBalance ?? null);
-
       if (reloadRes.ok) {
         const reloadData = await reloadRes.json();
         setAutoReload(reloadData ?? null);
@@ -304,15 +301,6 @@ function CreditsContent() {
               </div>
             )}
 
-            {/* Twilio Balance */}
-            {twilioBalance !== null && (
-              <div className="px-4 py-2 rounded-lg bg-white/5 border border-border">
-                <p className="text-xs text-text-muted">GoElev8 Twilio Balance</p>
-                <p className="text-lg font-semibold text-text">
-                  ${twilioBalance.toFixed(2)}
-                </p>
-              </div>
-            )}
           </div>
         </div>
       </div>

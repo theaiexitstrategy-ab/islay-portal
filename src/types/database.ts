@@ -92,3 +92,33 @@ export interface AutoReload {
   created_at: string;
   updated_at: string;
 }
+
+export interface ClientSettings {
+  id: string;
+  client_id: string;
+  studio_name: string | null;
+  owner_name: string | null;
+  owner_email: string | null;
+  owner_phone: string | null;
+  promo_code: string | null;
+  promo_amount: string | null;
+  timezone: string;
+  notification_email: boolean;
+  notification_sms: boolean;
+  low_credit_threshold: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SocialLink {
+  id: string;
+  client_id: string;
+  platform: string;
+  username: string | null;
+  profile_url: string | null;
+  connected: boolean;
+  followers: number | null;
+  last_synced: string | null;
+  created_at: string;
+  updated_at: string;
+}
