@@ -15,7 +15,7 @@ const corsHeaders = {
 const BUNDLES: Record<string, { name: string; price: number; credits: number; costPerCredit: number }> = {
   starter: { name: "Starter — 250 Credits",   price: 2500,  credits: 250,  costPerCredit: 0.10 },
   growth:  { name: "Growth — 625 Credits",    price: 5000,  credits: 625,  costPerCredit: 0.08 },
-  pro:     { name: "Pro — 1,666 Credits",     price: 10000, credits: 1666, costPerCredit: 0.06 },
+  pro:     { name: "Pro — 2,000 Credits",     price: 10000, credits: 2000, costPerCredit: 0.05 },
 };
 
 Deno.serve(async (req) => {

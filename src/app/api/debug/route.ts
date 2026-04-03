@@ -4,82 +4,61 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 export async function GET() {
   const diagnostics: Record<string, unknown> = {};
 
-  // 1. Check env vars
+  // Check env vars
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   diagnostics.envVars = {
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? "SET" : "MISSING",
+    NEXT_PUBLIC_SUPABASE_URL: url ? `SET (${url.substring(0, 30)}...)` : "MISSING",
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "SET" : "MISSING",
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? "SET" : "MISSING",
+    SUPABASE_SERVICE_ROLE_KEY: key ? `SET (${key.substring(0, 10)}...)` : "MISSING",
   };
+
+  if (!url || !key) {
+    diagnostics.fatalError = "Missing Supabase env vars — data APIs will fail";
+    return NextResponse.json(diagnostics, { headers: { "Cache-Control": "no-store" } });
+  }
 
   try {
     const supabase = getSupabaseAdmin();
 
-    // 2. Count all leads (no filter)
-    const { data: allLeads, error: allErr, count: allCount } = await supabase
-      .from("leads")
-      .select("id, client_id", { count: "exact" })
-      .limit(5);
-    diagnostics.allLeads = {
-      count: allCount ?? allLeads?.length ?? 0,
-      error: allErr?.message ?? null,
-      sample: allLeads?.map((l) => ({ id: l.id, client_id: l.client_id })) ?? [],
-    };
+    // Test each table individually
+    for (const table of ["leads", "artists", "calls", "blasts", "credits", "credit_transactions", "auto_reload"]) {
+      const { data, error, count } = await supabase
+        .from(table)
+        .select("*", { count: "exact" })
+        .limit(3);
+      diagnostics[`table_${table}`] = {
+        status: error ? "ERROR" : "OK",
+        error: error ? { message: error.message, code: error.code, hint: error.hint, details: error.details } : null,
+        rowCount: count ?? data?.length ?? 0,
+        sampleIds: (data ?? []).slice(0, 3).map((r: Record<string, unknown>) => r.id),
+      };
+    }
 
-    // 3. Count leads with client_id filter
-    const { data: filteredLeads, error: filtErr, count: filtCount } = await supabase
+    // Test leads with client_id filter specifically
+    const { data: filteredLeads, error: filtErr } = await supabase
       .from("leads")
-      .select("id, client_id, full_name, date_entered", { count: "exact" })
+      .select("id, client_id, full_name, date_entered")
       .eq("client_id", "islay_studios")
+      .order("date_entered", { ascending: false })
       .limit(5);
     diagnostics.islayLeads = {
-      count: filtCount ?? filteredLeads?.length ?? 0,
-      error: filtErr?.message ?? null,
+      error: filtErr ? { message: filtErr.message, code: filtErr.code, hint: filtErr.hint } : null,
+      count: filteredLeads?.length ?? 0,
       sample: filteredLeads ?? [],
     };
 
-    // 4. Check distinct client_ids
-    const { data: clientIds, error: clientErr } = await supabase
+    // Check distinct client_ids
+    const { data: allLeads } = await supabase
       .from("leads")
       .select("client_id")
-      .limit(50);
-    const uniqueClientIds = [...new Set((clientIds ?? []).map((r) => r.client_id))];
-    diagnostics.distinctClientIds = {
-      values: uniqueClientIds,
-      error: clientErr?.message ?? null,
-    };
-
-    // 5. Check credits table
-    const { data: credits, error: credErr } = await supabase
-      .from("credits")
-      .select("*")
-      .eq("client_id", "islay_studios")
-      .single();
-    diagnostics.credits = {
-      data: credits,
-      error: credErr?.message ?? null,
-    };
-
-    // 6. Check if sms_status column exists (query with it)
-    const { data: smsTest, error: smsErr } = await supabase
-      .from("leads")
-      .select("sms_status")
-      .limit(1);
-    diagnostics.smsStatusColumn = {
-      exists: !smsErr,
-      error: smsErr?.message ?? null,
-    };
-
-    // 7. Check tables exist
-    for (const table of ["leads", "credits", "credit_transactions", "auto_reload", "artists"]) {
-      const { error: tErr } = await supabase.from(table).select("id").limit(1);
-      diagnostics[`table_${table}`] = tErr ? `ERROR: ${tErr.message}` : "OK";
-    }
+      .limit(100);
+    const uniqueIds = [...new Set((allLeads ?? []).map((r: Record<string, unknown>) => r.client_id))];
+    diagnostics.distinctClientIds = uniqueIds;
 
   } catch (error) {
     diagnostics.fatalError = error instanceof Error ? error.message : String(error);
   }
 
-  return NextResponse.json(diagnostics, {
-    headers: { "Cache-Control": "no-store" },
-  });
+  return NextResponse.json(diagnostics, { headers: { "Cache-Control": "no-store" } });
 }

@@ -37,10 +37,10 @@ const BUNDLES = [
     id: "pro",
     name: "Pro",
     price: "$100",
-    credits: 1666,
-    costPerCredit: "$0.06",
-    savings: "Save 40%",
-    valueMultiple: "Get 6.6x more credits than Starter",
+    credits: 2000,
+    costPerCredit: "$0.05",
+    savings: "Save 50%",
+    valueMultiple: "Get 8x more credits than Starter",
     highlight: true,
     badge: "Best Value",
   },
@@ -100,14 +100,24 @@ function CreditsContent() {
 
   async function fetchCredits() {
     try {
-      const res = await fetch("/api/credits");
-      const data = await res.json();
+      const [creditsRes, reloadRes] = await Promise.all([
+        fetch("/api/credits"),
+        fetch("/api/auto-reload"),
+      ]);
+      const data = await creditsRes.json();
       setBalance(data.balance ?? 0);
       setTransactions(data.transactions ?? []);
-      setAutoReload(data.autoReload ?? null);
       setAvgDailyUsage(data.avgDailyUsage ?? 0);
       setProjectedDays(data.projectedDaysRemaining ?? null);
       setTwilioBalance(data.twilioBalance ?? null);
+
+      if (reloadRes.ok) {
+        const reloadData = await reloadRes.json();
+        setAutoReload(reloadData ?? null);
+      } else {
+        // Use data from credits API as fallback
+        setAutoReload(data.autoReload ?? null);
+      }
     } catch (err) {
       console.error("Failed to fetch credits:", err);
     } finally {

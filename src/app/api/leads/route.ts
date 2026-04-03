@@ -2,28 +2,30 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
-  try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("leads")
-      .select("*")
-      .eq("client_id", "islay_studios")
-      .order("date_entered", { ascending: false });
-
-    if (error) {
-      console.error("Leads query error:", error);
-      return NextResponse.json(
-        { error: error.message, code: error.code, details: error.details },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json(data ?? []);
-  } catch (error) {
-    console.error("Failed to fetch leads:", error);
+  // Check env vars first
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
-      { error: "Failed to fetch leads" },
+      { error: "Missing Supabase env vars", envCheck: {
+        url: process.env.NEXT_PUBLIC_SUPABASE_URL ? "set" : "MISSING",
+        key: process.env.SUPABASE_SERVICE_ROLE_KEY ? "set" : "MISSING",
+      }},
       { status: 500 },
     );
   }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("client_id", "islay_studios")
+    .order("date_entered", { ascending: false });
+
+  if (error) {
+    return NextResponse.json(
+      { error: error.message, code: error.code, hint: error.hint, details: error.details },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json(data ?? []);
 }

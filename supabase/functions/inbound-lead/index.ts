@@ -23,7 +23,7 @@ const DEFAULT_BOOKING_URL = "https://www.islaystudiosllc.com";
 const BUNDLES: Record<string, { price: number; credits: number; costPerCredit: number }> = {
   starter: { price: 2500,  credits: 250,  costPerCredit: 0.10 },
   growth:  { price: 5000,  credits: 625,  costPerCredit: 0.08 },
-  pro:     { price: 10000, credits: 1666, costPerCredit: 0.06 },
+  pro:     { price: 10000, credits: 2000, costPerCredit: 0.05 },
 };
 
 async function sendSMS(to: string, body: string): Promise<boolean> {
