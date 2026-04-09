@@ -52,8 +52,8 @@ Deno.serve(async (req) => {
     // Create Stripe Checkout Session via API
     const params = new URLSearchParams();
     params.set("mode", "payment");
-    params.set("success_url", success_url || "https://portal.islaystudiosllc.com/credits?success=true");
-    params.set("cancel_url", cancel_url || "https://portal.islaystudiosllc.com/credits?cancelled=true");
+    params.set("success_url", success_url || "https://portal.goelev8.ai/islaystudios/credits?success=true");
+    params.set("cancel_url", cancel_url || "https://portal.goelev8.ai/islaystudios/credits?cancelled=true");
     params.set("line_items[0][price_data][currency]", "usd");
     params.set("line_items[0][price_data][product_data][name]", bundle.name);
     params.set("line_items[0][price_data][unit_amount]", String(bundle.price));
