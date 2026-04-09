@@ -4,7 +4,7 @@
 // and returns { success, lead_id }.
 //
 // Deploy: supabase functions deploy capture-lead --no-verify-jwt
-// URL:    https://uouoczmxigizkqszagdl.supabase.co/functions/v1/capture-lead
+// URL:    https://bnkoqybkmwtrlorhowyv.supabase.co/functions/v1/capture-lead
 //
 // Required secrets (set via supabase secrets set):
 //   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER

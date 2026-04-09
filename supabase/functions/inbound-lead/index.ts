@@ -4,7 +4,7 @@
 // and triggers auto-reload if threshold is hit.
 //
 // Deploy: supabase functions deploy inbound-lead --no-verify-jwt
-// URL:    https://uouoczmxigizkqszagdl.supabase.co/functions/v1/inbound-lead
+// URL:    https://bnkoqybkmwtrlorhowyv.supabase.co/functions/v1/inbound-lead
 //
 // Required secrets (set via supabase secrets set):
 //   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
